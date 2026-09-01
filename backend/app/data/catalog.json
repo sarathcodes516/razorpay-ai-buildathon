@@ -1,0 +1,37 @@
+[
+  {
+    "sku": "TEE-001",
+    "name": "Cyberpunk Oversized Graphic Tee",
+    "price": 999.0,
+    "category": "apparel",
+    "in_stock": 50
+  },
+  {
+    "sku": "HOD-002",
+    "name": "Tokyo Drift Heavyweight Hoodie",
+    "price": 1999.0,
+    "category": "apparel",
+    "in_stock": 20
+  },
+  {
+    "sku": "CRG-003",
+    "name": "Utility Cargo Pants V2",
+    "price": 1499.0,
+    "category": "apparel",
+    "in_stock": 15
+  },
+  {
+    "sku": "ACC-004",
+    "name": "Tactical Crossbody Bag",
+    "price": 799.0,
+    "category": "accessories",
+    "in_stock": 30
+  },
+  {
+    "sku": "ACC-005",
+    "name": "Classic Logo Beanie",
+    "price": 499.0,
+    "category": "accessories",
+    "in_stock": 100
+  }
+]
