@@ -16,9 +16,24 @@ You MUST respond strictly in JSON matching this schema:
 }
 """
 
+RECOVERY_PROMPT = """You are the AI Sales Concierge for 'StreetSoul'.
+The user's payment just failed. Reason: {error_reason}.
+Acknowledge the failure gracefully, apologize, and offer a 5% recovery discount to save the sale.
+
+You MUST respond strictly in JSON matching this schema:
+{
+  "message": "Apology, explanation, and the 5% discount offer.",
+  "items": [],   
+  "discount_pct": 5.0
+}
+"""
+
 def generate_agent_proposal(user_message: str) -> dict:
     with open(CATALOG_PATH, "r") as f:
         catalog_str = f.read()
-    
     prompt = SYSTEM_PROMPT.replace("{catalog}", catalog_str)
     return call_gemini_json(prompt, user_message)
+
+def generate_recovery_message(error_reason: str) -> dict:
+    prompt = RECOVERY_PROMPT.replace("{error_reason}", error_reason)
+    return call_gemini_json(prompt, "The payment failed. Generate a recovery response.")

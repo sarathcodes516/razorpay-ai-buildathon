@@ -1,7 +1,7 @@
 import uuid
 from fastapi import APIRouter
 from pydantic import BaseModel
-from app.agents.merchant_agent import generate_agent_proposal
+from app.agents.merchant_agent import generate_agent_proposal, generate_recovery_message
 from app.models.cart import CartMandate, CartItem
 from app.core.bounds_engine import check_against_mandate
 from app.routers.mandate import MOCK_DB
@@ -13,9 +13,11 @@ class ChatRequest(BaseModel):
     mandate_id: str
     user_message: str
 
+class PaymentFailureRequest(BaseModel):
+    error_reason: str
+
 @router.post("/api/storefront/chat")
 def chat_with_concierge(req: ChatRequest):
-    # 1. LLM Proposes (Language & Intent)
     llm_response = generate_agent_proposal(req.user_message)
     
     items = llm_response.get("items", [])
@@ -32,10 +34,9 @@ def chat_with_concierge(req: ChatRequest):
         final_amount=final_amount
     )
 
-    # 2. Code Disposes (Deterministic Bounds Check)
     mandate = MOCK_DB.get(req.mandate_id)
     if not mandate:
-        return {"error": "Mandate not found. Please setup your Spend Mandate first."}
+        return {"error": "Mandate not found."}
 
     is_approved, action, audit = check_against_mandate(cart, mandate)
 
@@ -46,9 +47,15 @@ def chat_with_concierge(req: ChatRequest):
         "audit_trail": audit
     }
 
-    # 3. Execution Phase
     if action == "EXECUTE":
-        rzp_order = create_order(cart.final_amount, cart.cart_id)
-        response_payload["razorpay_order"] = rzp_order
+        response_payload["razorpay_order"] = create_order(cart.final_amount, cart.cart_id)
 
     return response_payload
+
+@router.post("/api/storefront/recover")
+def recover_failed_payment(req: PaymentFailureRequest):
+    llm_response = generate_recovery_message(req.error_reason)
+    return {
+        "agent_message": llm_response.get("message"),
+        "recovery_discount_pct": llm_response.get("discount_pct", 5.0)
+    }
