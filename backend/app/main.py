@@ -3,7 +3,7 @@ load_dotenv()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import catalog, mandate, payments
+from app.routers import catalog, mandate, payments, storefront
 
 app = FastAPI(title="TrustRail API")
 
@@ -18,6 +18,7 @@ app.add_middleware(
 app.include_router(catalog.router)
 app.include_router(mandate.router)
 app.include_router(payments.router)
+app.include_router(storefront.router) # Face 1 Router included!
 
 @app.get("/")
 def root():
