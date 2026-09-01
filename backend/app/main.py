@@ -1,21 +1,23 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import catalog, mandate
+from app.routers import catalog, mandate, payments
 
 app = FastAPI(title="TrustRail API")
 
-# Allow frontend to communicate with backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # For hackathon dev only
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include routers
 app.include_router(catalog.router)
 app.include_router(mandate.router)
+app.include_router(payments.router)
 
 @app.get("/")
 def root():
