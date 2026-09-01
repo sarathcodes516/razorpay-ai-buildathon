@@ -36,7 +36,7 @@ def autonomous_negotiation(req: NegotiationRequest):
             break # Deal reached in previous turn
             
         # 2. Merchant's Turn
-        merchant_res = generate_b2b_merchant_turn(history, buyer_res.get('message'))
+        merchant_res = generate_b2b_merchant_turn(history, buyer_res.get('message'), turn)
         history += f"\nMerchant: {merchant_res.get('message')} (Offering {merchant_res.get('offered_discount_pct')}% off)\n"
         transcript.append({"role": "merchant", "data": merchant_res})
         

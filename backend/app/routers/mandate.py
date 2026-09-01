@@ -12,9 +12,30 @@ class MandateRequest(BaseModel):
     principal: str
     limits: dict
 
+class DynamicMandateRequest(BaseModel):
+    principal: str
+    max_per_transaction: float
+    max_total_spend_today: float
+    allowed_categories: list[str]
+    auto_approve_below: float
+    max_discount_agent_can_accept_pct: float
+
 @router.post("/api/mandate")
 def generate_mandate(req: MandateRequest):
     mandate = create_mandate(req.principal, req.limits)
+    MOCK_DB[mandate.mandate_id] = mandate
+    return mandate
+
+@router.post("/api/mandate/dynamic")
+def generate_dynamic_mandate(req: DynamicMandateRequest):
+    limits = {
+        "max_per_transaction": req.max_per_transaction,
+        "max_total_spend_today": req.max_total_spend_today,
+        "allowed_categories": req.allowed_categories,
+        "auto_approve_below": req.auto_approve_below,
+        "max_discount_agent_can_accept_pct": req.max_discount_agent_can_accept_pct
+    }
+    mandate = create_mandate(req.principal, limits)
     MOCK_DB[mandate.mandate_id] = mandate
     return mandate
 

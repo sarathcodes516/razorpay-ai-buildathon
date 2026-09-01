@@ -1,4 +1,5 @@
 import os
+import json
 from app.agents.llm_client import call_gemini_json
 
 CATALOG_PATH = os.path.join(os.path.dirname(__file__), "../data/catalog.json")
@@ -45,29 +46,39 @@ def generate_recovery_message(error_reason: str) -> dict:
     return call_gemini_json(prompt, "The payment failed. Generate a recovery response.")
 
 
-B2B_MERCHANT_PROMPT = """You are the B2B AI Sales Agent for 'StreetSoul'.
-You are negotiating with an external Procurement AI.
-You want to close the deal, but protect your margins. You can offer up to a 15% discount for bulk orders.
-Available Catalog: {catalog}
+B2B_MERCHANT_PROMPT = """You are the dynamic B2B AI Sales Agent for 'The Souled Stole'.
+You evaluate inbound buyer intents against real-time live inventory and the merchant's active runtime store policy.
 
-Context of negotiation so far:
+Active Store Policy:
+{policy}
+
+Live Catalog & Stock:
+{catalog}
+
+Context of negotiation:
 {history}
 
 IMPORTANT: You MUST respond with a single raw JSON object only. No markdown. No code fences.
 
 The JSON object must have exactly these five keys:
-- "thought_process": a string explaining why you are accepting or countering
+- "thought_process": a string analyzing live inventory and active store policy limits to decide counter-offer
 - "action": one of the strings "COUNTER", "ACCEPT", or "REJECT"
-- "message": a string with your reply to the buyer
+- "message": a string with your professional negotiation message explaining your policy stance
 - "approved_items": an array of objects, each with keys "sku" (string), "qty" (integer), "price" (float), "category" (string)
-- "offered_discount_pct": a float for the discount you are offering (0.0 to 15.0)
+- "offered_discount_pct": a float for the discount you are offering based on live stock and active policy
 
 Example of valid output format:
-{"thought_process": "Buyer wants 20% but I can only go to 15%.", "action": "COUNTER", "message": "I can offer you 12% for this bulk order.", "approved_items": [{"sku": "HOD-002", "qty": 10, "price": 1999.0, "category": "apparel"}], "offered_discount_pct": 12.0}
+{"thought_process": "Policy cap is 15%. HOD-002 stock is 12 (low), TEE-001 stock is 50 (high). Offering blended 10%.", "action": "COUNTER", "message": "Based on our current stock levels, I can offer 10% on this order.", "approved_items": [{"sku": "TEE-001", "qty": 10, "price": 999.0, "category": "apparel"}], "offered_discount_pct": 10.0}
 """
 
-def generate_b2b_merchant_turn(history: str, buyer_proposal: str) -> dict:
-    with open(CATALOG_PATH, "r") as f:
-        catalog_str = f.read()
-    prompt = B2B_MERCHANT_PROMPT.replace("{catalog}", catalog_str).replace("{history}", history)
-    return call_gemini_json(prompt, f"The buyer says: {buyer_proposal}. Make your counter-offer.")
+
+def generate_b2b_merchant_turn(history: str, buyer_proposal: str, turn: int = 0) -> dict:
+    from app.core.merchant_state import get_store_state
+    state = get_store_state()
+    prompt = (
+        B2B_MERCHANT_PROMPT
+        .replace("{policy}", json.dumps(state["policy"], indent=2))
+        .replace("{catalog}", json.dumps(state["catalog"], indent=2))
+        .replace("{history}", history)
+    )
+    return call_gemini_json(prompt, f"Buyer proposal: {buyer_proposal}. Evaluate active store policy and respond.")

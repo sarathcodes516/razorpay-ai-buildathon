@@ -3,6 +3,8 @@ import Navbar from './components/Navbar';
 import ProductGrid from './components/ProductGrid';
 import ApprovalModal from './components/ApprovalModal';
 import AgentGateway from './components/AgentGateway';
+import MandateConfigurator from './components/MandateConfigurator';
+import MerchantConfigPanel from './components/MerchantConfigPanel';
 import { fetchCatalog, sendChatMessage, recoverPayment } from './api/client';
 import { MessageSquare, Send, Bot, Activity, X } from 'lucide-react';
 import { ChatResponse, AuditEntry } from './types/api';
@@ -10,7 +12,7 @@ import { ChatResponse, AuditEntry } from './types/api';
 export default function App() {
   const [catalog, setCatalog] = useState([]);
   const [mandateId, setMandateId] = useState("");
-  const [activeTab, setActiveTab] = useState<'store' | 'gateway'>('store');
+  const [activeTab, setActiveTab] = useState<'store' | 'gateway' | 'mandate' | 'merchant'>('mandate');
 
   // Chat state
   const [isOpen, setIsOpen] = useState(false);
@@ -80,6 +82,20 @@ export default function App() {
         {/* Face switcher */}
         <div className="flex bg-gray-800 p-1 rounded-lg">
           <button
+            onClick={() => setActiveTab('merchant')}
+            className="px-4 py-1.5 text-xs font-bold rounded-md transition-colors"
+            style={{ backgroundColor: activeTab === 'merchant' ? '#0E54CD' : 'transparent', color: activeTab === 'merchant' ? 'white' : '#9ca3af' }}
+          >
+            Merchant Config
+          </button>
+          <button
+            onClick={() => setActiveTab('mandate')}
+            className="px-4 py-1.5 text-xs font-bold rounded-md transition-colors"
+            style={{ backgroundColor: activeTab === 'mandate' ? '#48D08C' : 'transparent', color: activeTab === 'mandate' ? 'white' : '#9ca3af' }}
+          >
+            Issue Mandate
+          </button>
+          <button
             onClick={() => setActiveTab('store')}
             className={`px-4 py-1.5 text-xs font-bold rounded-md transition-colors ${activeTab === 'store' ? 'bg-white text-black' : 'text-gray-400 hover:text-white'}`}
           >
@@ -87,7 +103,8 @@ export default function App() {
           </button>
           <button
             onClick={() => setActiveTab('gateway')}
-            className={`px-4 py-1.5 text-xs font-bold rounded-md transition-colors ${activeTab === 'gateway' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
+            className="px-4 py-1.5 text-xs font-bold rounded-md transition-colors"
+            style={{ backgroundColor: activeTab === 'gateway' ? '#0E54CD' : 'transparent', color: activeTab === 'gateway' ? 'white' : '#9ca3af' }}
           >
             B2B Agent Gateway
           </button>
@@ -220,8 +237,12 @@ export default function App() {
             />
           )}
         </>
-      ) : (
+      ) : activeTab === 'gateway' ? (
         <AgentGateway mandateId={mandateId} />
+      ) : activeTab === 'merchant' ? (
+        <MerchantConfigPanel />
+      ) : (
+        <MandateConfigurator onMandateCreated={(id) => { setMandateId(id); setActiveTab('store'); }} />
       )}
     </div>
   );

@@ -4,6 +4,9 @@ import { NegotiationResponse } from '../types/api';
 import { Activity, ShieldAlert, Cpu } from 'lucide-react';
 import ApprovalModal from './ApprovalModal';
 
+const MERCHANT_BLUE = '#0E54CD';
+const BUYER_GREEN = '#48D08C';
+
 export default function AgentGateway({ mandateId }: { mandateId: string }) {
   const [goal, setGoal] = useState("I need 15 Graphic Tees for a crew event. My budget is tight.");
   const [loading, setLoading] = useState(false);
@@ -26,34 +29,55 @@ export default function AgentGateway({ mandateId }: { mandateId: string }) {
 
   return (
     <div className="max-w-screen-xl mx-auto px-6 py-10">
+      {/* Header */}
       <div className="flex items-center gap-3 mb-8">
-        <Cpu className="w-8 h-8 text-blue-600" />
+        <Cpu className="w-8 h-8" style={{ color: MERCHANT_BLUE }} />
         <div>
           <h2 className="text-2xl font-black tracking-tight text-gray-900">UAP/AP2 Agent Gateway</h2>
           <p className="text-sm text-gray-500">B2B Autonomous Procurement Interface</p>
+        </div>
+        {/* Legend */}
+        <div className="ml-auto flex items-center gap-4 text-xs font-bold">
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: BUYER_GREEN }}></span>
+            <span style={{ color: BUYER_GREEN }}>Procurement AI (Buyer)</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: MERCHANT_BLUE }}></span>
+            <span style={{ color: MERCHANT_BLUE }}>Merchant AI (Seller)</span>
+          </span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Col: Setup & Result */}
         <div className="space-y-6">
-          <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
-            <h3 className="font-bold text-sm uppercase tracking-wider text-gray-700 mb-3">External Buyer Payload</h3>
+          {/* Buyer payload — green border */}
+          <div className="bg-white rounded-xl p-5 shadow-sm" style={{ border: `1.5px solid ${BUYER_GREEN}` }}>
+            <h3 className="font-bold text-sm uppercase tracking-wider mb-1" style={{ color: BUYER_GREEN }}>
+              External Buyer Payload
+            </h3>
+            <p className="text-[10px] text-gray-400 mb-3">What the Procurement AI is instructed to achieve</p>
             <textarea
-              className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:border-blue-500"
+              className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm focus:outline-none"
               rows={4}
               value={goal}
               onChange={e => setGoal(e.target.value)}
+              style={{ borderColor: `${BUYER_GREEN}60` }}
             />
             <button
               onClick={runSimulation}
               disabled={loading}
-              className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:bg-blue-300"
+              className="w-full mt-4 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+              style={{ backgroundColor: MERCHANT_BLUE }}
             >
-              {loading ? <><Activity className="w-5 h-5 animate-spin" /> Agents Negotiating...</> : "Initialize Autonomous Negotiation"}
+              {loading
+                ? <><Activity className="w-5 h-5 animate-spin" /> Agents Negotiating...</>
+                : "Initialize Autonomous Negotiation"}
             </button>
           </div>
 
+          {/* Bounds Engine result */}
           {response && response.audit_trail && (
             <div className="bg-gray-900 rounded-xl p-5 shadow-lg text-white font-mono text-sm">
               <div className="flex items-center gap-2 text-gray-400 mb-3 pb-3 border-b border-gray-800">
@@ -80,6 +104,7 @@ export default function AgentGateway({ mandateId }: { mandateId: string }) {
             </div>
           )}
 
+          {/* Negotiated cart */}
           {response?.final_cart && (
             <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
               <h3 className="font-bold text-sm uppercase tracking-wider text-gray-700 mb-3">Negotiated Cart</h3>
@@ -92,7 +117,7 @@ export default function AgentGateway({ mandateId }: { mandateId: string }) {
                 ))}
                 <div className="border-t border-gray-200 pt-2 mt-2 space-y-1">
                   <div className="flex justify-between text-gray-500"><span>Subtotal</span><span>₹{response.final_cart.subtotal.toLocaleString()}</span></div>
-                  <div className="flex justify-between text-green-600"><span>Discount</span><span>-{response.final_cart.discount_pct}%</span></div>
+                  <div className="flex justify-between font-bold" style={{ color: BUYER_GREEN }}><span>Discount</span><span>-{response.final_cart.discount_pct}%</span></div>
                   <div className="flex justify-between font-black text-gray-900 text-base"><span>Final</span><span>₹{response.final_cart.final_amount.toLocaleString()}</span></div>
                 </div>
               </div>
@@ -114,35 +139,49 @@ export default function AgentGateway({ mandateId }: { mandateId: string }) {
               </div>
             )}
             {loading && (
-              <div className="h-full flex flex-col items-center justify-center gap-3 text-blue-500">
+              <div className="h-full flex flex-col items-center justify-center gap-3" style={{ color: MERCHANT_BLUE }}>
                 <Activity className="w-8 h-8 animate-spin" />
                 <p className="text-sm font-mono">Agents negotiating autonomously...</p>
               </div>
             )}
 
-            {response?.transcript.map((turn, i) => (
-              <div key={i} className={`flex flex-col ${turn.role === 'buyer' ? 'items-start' : 'items-end'}`}>
-                <div className={`text-xs font-bold uppercase tracking-wider mb-1 ${turn.role === 'buyer' ? 'text-blue-600' : 'text-red-600'}`}>
-                  {turn.role === 'buyer' ? '🤖 Procurement AI' : '🏪 Merchant AI'}
-                </div>
-                <div className={`max-w-[85%] rounded-xl p-4 shadow-sm border ${
-                  turn.role === 'buyer' ? 'bg-white border-blue-100' : 'bg-red-50 border-red-100'
-                }`}>
-                  <p className="text-gray-800 text-sm mb-3">{turn.data.message}</p>
-                  <div className="bg-gray-900 rounded p-3 font-mono text-xs text-gray-300">
-                    <div className="text-gray-500 mb-1">// INTERNAL THOUGHT PROCESS</div>
-                    <div className="mb-2 text-green-400 break-words">{turn.data.thought_process}</div>
-                    <div><span className="text-gray-500">action: </span><span className="text-white font-bold">{turn.data.action}</span></div>
-                    {turn.data.requested_discount_pct !== undefined && (
-                      <div><span className="text-gray-500">req_discount: </span><span className="text-yellow-400">{turn.data.requested_discount_pct}%</span></div>
-                    )}
-                    {turn.data.offered_discount_pct !== undefined && (
-                      <div><span className="text-gray-500">offer_discount: </span><span className="text-yellow-400">{turn.data.offered_discount_pct}%</span></div>
-                    )}
+            {response?.transcript.map((turn, i) => {
+              const isBuyer = turn.role === 'buyer';
+              const color = isBuyer ? BUYER_GREEN : MERCHANT_BLUE;
+              const discountKey = isBuyer ? turn.data.requested_discount_pct : turn.data.offered_discount_pct;
+              const discountLabel = isBuyer ? 'req_discount' : 'offer_discount';
+
+              return (
+                <div key={i} className={`flex flex-col ${isBuyer ? 'items-start' : 'items-end'}`}>
+                  <div className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color }}>
+                    {isBuyer ? '🤖 Procurement AI' : '🏪 Merchant AI'}
+                  </div>
+                  <div
+                    className="max-w-[85%] rounded-xl p-4 shadow-sm"
+                    style={{
+                      border: `1.5px solid ${color}30`,
+                      backgroundColor: `${color}08`
+                    }}
+                  >
+                    <p className="text-gray-800 text-sm mb-3">{turn.data.message}</p>
+                    <div className="bg-gray-900 rounded p-3 font-mono text-xs text-gray-300">
+                      <div className="text-gray-500 mb-1">// INTERNAL THOUGHT PROCESS</div>
+                      <div className="mb-2 break-words" style={{ color: `${color}cc` }}>{turn.data.thought_process}</div>
+                      <div>
+                        <span className="text-gray-500">action: </span>
+                        <span className="text-white font-bold">{turn.data.action}</span>
+                      </div>
+                      {discountKey !== undefined && (
+                        <div>
+                          <span className="text-gray-500">{discountLabel}: </span>
+                          <span className="font-bold" style={{ color }}>{discountKey}%</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
