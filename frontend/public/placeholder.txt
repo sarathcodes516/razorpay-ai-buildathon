@@ -1,0 +1,2 @@
+Place your logo.png file in this directory.
+The Navbar component loads it as /logo.png.
