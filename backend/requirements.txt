@@ -3,4 +3,10 @@ uvicorn
 pydantic
 razorpay
 python-dotenv
-google-generativeai
+google-genai
+openai
+deepgram-sdk
+websockets
+cryptography
+pytest
+httpx

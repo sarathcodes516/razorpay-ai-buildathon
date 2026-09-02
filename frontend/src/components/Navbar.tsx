@@ -1,7 +1,12 @@
 import React from 'react';
-import { Menu, Search, Mic, User, Heart, ShoppingCart } from 'lucide-react';
+import { Menu, Search, Mic, User, Heart, ShoppingBag } from 'lucide-react';
 
-export default function Navbar() {
+interface NavbarProps {
+  cartCount?: number;
+  onCartClick?: () => void;
+}
+
+export default function Navbar({ cartCount = 0, onCartClick }: NavbarProps) {
   return (
     <nav className="sticky top-0 z-40 w-full bg-white border-b border-gray-200 shadow-sm">
       <div className="flex items-center justify-between px-6 h-16 max-w-screen-2xl mx-auto">
@@ -24,7 +29,14 @@ export default function Navbar() {
           </div>
           <User className="w-5 h-5 text-gray-700 cursor-pointer hover:text-black" />
           <Heart className="w-5 h-5 text-gray-700 cursor-pointer hover:text-black" />
-          <ShoppingCart className="w-5 h-5 text-gray-700 cursor-pointer hover:text-black" />
+          <button onClick={onCartClick} className="relative p-1 text-gray-700 hover:text-red-600 transition-colors">
+            <ShoppingBag className="w-5 h-5" />
+            {cartCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                {cartCount}
+              </span>
+            )}
+          </button>
         </div>
       </div>
     </nav>

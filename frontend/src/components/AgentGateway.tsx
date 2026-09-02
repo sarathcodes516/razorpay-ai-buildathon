@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { startNegotiation } from '../api/client';
 import { NegotiationResponse } from '../types/api';
 import { Activity, ShieldAlert, Cpu } from 'lucide-react';
 import ApprovalModal from './ApprovalModal';
@@ -18,7 +17,11 @@ export default function AgentGateway({ mandateId }: { mandateId: string }) {
     setLoading(true);
     setResponse(null);
     try {
-      const res = await startNegotiation(mandateId, goal);
+      const res = await fetch('http://localhost:8001/api/gateway/negotiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mandate_id: mandateId, procurement_goal: goal }),
+      }).then(r => r.json()) as NegotiationResponse;
       setResponse(res);
       if (res.action === "ESCALATE") setShowModal(true);
     } catch (e: any) {

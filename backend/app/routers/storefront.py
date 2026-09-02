@@ -1,61 +1,137 @@
 import uuid
+import json
 from fastapi import APIRouter
 from pydantic import BaseModel
-from app.agents.merchant_agent import generate_agent_proposal, generate_recovery_message
-from app.models.cart import CartMandate, CartItem
-from app.core.bounds_engine import check_against_mandate
-from app.routers.mandate import MOCK_DB
-from app.integrations.razorpay_client import create_order
+from typing import List
+from app.agents.b2c_orchestrator import run_orchestrator
+from app.agents.specialists import run_specialist
+from app.agents.concierge_agent import generate_recovery_message
+from app.core.merchant_state import get_store_state
+from app.integrations.razorpay_client import create_order, KEY_ID as RAZORPAY_KEY_ID
 
 router = APIRouter()
 
-class ChatRequest(BaseModel):
-    mandate_id: str
-    user_message: str
 
-class PaymentFailureRequest(BaseModel):
+class CartItemInfo(BaseModel):
+    sku: str
+    qty: int
+
+
+class B2CChatRequest(BaseModel):
+    user_message: str
+    history: str = ""
+    current_cart: List[CartItemInfo] = []
+
+
+class PaymentFailedWebhook(BaseModel):
+    razorpay_payment_id: str
+    razorpay_order_id: str
+    error_code: str
+    error_description: str
     error_reason: str
 
+
 @router.post("/api/storefront/chat")
-def chat_with_concierge(req: ChatRequest):
-    llm_response = generate_agent_proposal(req.user_message)
-    
-    items = llm_response.get("items", [])
-    subtotal = sum(item["price"] * item["qty"] for item in items)
-    discount_pct = float(llm_response.get("discount_pct", 0.0))
-    final_amount = subtotal * (1 - (discount_pct / 100))
+def b2c_chat(req: B2CChatRequest):
+    catalog = get_store_state()["catalog"]
+    catalog_str = json.dumps(catalog)
+    cart_str = json.dumps([i.model_dump() for i in req.current_cart])
 
-    cart = CartMandate(
-        cart_id=f"cart_{uuid.uuid4().hex[:8]}",
-        mandate_id=req.mandate_id,
-        items=[CartItem(**i) for i in items],
-        subtotal=subtotal,
-        discount_pct=discount_pct,
-        final_amount=final_amount
-    )
+    # 1. Orchestrator assesses intent
+    orch = run_orchestrator(req.user_message, req.history, catalog_str, cart_str)
 
-    mandate = MOCK_DB.get(req.mandate_id)
-    if not mandate:
-        return {"error": "Mandate not found."}
+    reply_message = orch.get("message", "I didn't quite catch that.")
+    action        = orch.get("suggested_action", "NONE")
+    intent        = orch.get("internal_intent", "GENERAL")
+    trigger_sku   = orch.get("trigger_sku")
 
-    is_approved, action, audit = check_against_mandate(cart, mandate)
+    new_cart_items = []
+    razorpay_order = None
 
-    response_payload = {
-        "agent_message": llm_response.get("message"),
-        "cart": cart.model_dump(),
-        "action": action,
-        "audit_trail": audit
+    # 2. Strict cart addition — only what the orchestrator explicitly listed
+    for item_req in orch.get("items_to_add", []):
+        sku = item_req.get("sku")
+        try:
+            qty = int(item_req.get("qty", 1))
+        except (ValueError, TypeError):
+            qty = 1
+
+        item = next((i for i in catalog if i["sku"] == sku), None)
+        if item:
+            new_cart_items.append({
+                "sku":   item["sku"],
+                "name":  item["name"],
+                "price": item["price"],
+                "qty":   qty,
+            })
+
+    # 2b. Explicit cart updates / removals (absolute qty override)
+    updated_cart_items = []
+    for item_req in orch.get("items_to_update", []):
+        sku = item_req.get("sku")
+        try:
+            qty = int(item_req.get("qty", 0))
+        except (ValueError, TypeError):
+            qty = 0
+        if sku:
+            updated_cart_items.append({"sku": sku, "qty": qty})
+
+    # Guarantee trigger item matches what was actually just added this turn
+    if new_cart_items:
+        trigger_sku = new_cart_items[-1]["sku"]
+
+    # Resolve the plain-English product name so the specialist prompt is unambiguous
+    trigger_item_name = trigger_sku or ""
+    if trigger_sku:
+        target_item_obj = next((i for i in catalog if i["sku"] == trigger_sku), None)
+        if target_item_obj:
+            trigger_item_name = target_item_obj["name"]
+
+    # 3. Specialists generate persuasive TEXT ONLY — no cart state
+    if action in ("CALL_UPSELL", "CALL_CROSS_SELL") and trigger_sku:
+        agent_type = "UPSELL" if action == "CALL_UPSELL" else "CROSS_SELL"
+        try:
+            specialist = run_specialist(agent_type, catalog_str, trigger_item_name, cart_str)
+            reply_message = specialist.get("persuasive_message", reply_message)
+        except Exception:
+            pass
+
+    # 4. Checkout — lock cart and create Razorpay order
+    if intent == "CHECKOUT":
+        # Include items added this same turn in the total
+        existing_total = sum(
+            next((i["price"] for i in catalog if i["sku"] == c.sku), 0) * c.qty
+            for c in req.current_cart
+        )
+        new_total = sum(i["price"] * i["qty"] for i in new_cart_items)
+        total = existing_total + new_total
+
+        if total > 0:
+            razorpay_order = create_order(total, f"b2c_{uuid.uuid4().hex[:8]}")
+            reply_message = "I have locked in your cart. Sending you to secure payment now."
+        else:
+            reply_message = "Your cart is empty. What would you like to add before checking out?"
+
+    return {
+        "agent_message":   reply_message,
+        "added_items":     new_cart_items,
+        "updated_items":   updated_cart_items,
+        "razorpay_order":  razorpay_order,
+        "razorpay_key_id": RAZORPAY_KEY_ID,
+        "is_checkout":     intent == "CHECKOUT",
     }
 
-    if action == "EXECUTE":
-        response_payload["razorpay_order"] = create_order(cart.final_amount, cart.cart_id)
 
-    return response_payload
-
-@router.post("/api/storefront/recover")
-def recover_failed_payment(req: PaymentFailureRequest):
-    llm_response = generate_recovery_message(req.error_reason)
+@router.post("/api/storefront/payment-failed")
+def handle_payment_failed(req: PaymentFailedWebhook):
+    reason = f"{req.error_description} (code: {req.error_code}, reason: {req.error_reason})"
+    llm_response = generate_recovery_message(reason)
     return {
-        "agent_message": llm_response.get("message"),
-        "recovery_discount_pct": llm_response.get("discount_pct", 5.0)
+        "agent_message":         llm_response.get("message"),
+        "recovery_discount_pct": llm_response.get("discount_pct", 5.0),
+        "razorpay_payment_id":   req.razorpay_payment_id,
+        "razorpay_order_id":     req.razorpay_order_id,
+        "error_code":            req.error_code,
+        "error_description":     req.error_description,
+        "error_reason":          req.error_reason,
     }
