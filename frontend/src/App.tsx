@@ -490,33 +490,54 @@ export default function App() {
         {!isOpen ? (
           <button
             onClick={() => setIsOpen(true)}
-            className="bg-red-600 text-white p-4 rounded-full shadow-2xl hover:bg-red-700 transition-transform active:scale-95"
+            className="bg-[#305EFF] text-white p-4 rounded-full shadow-2xl hover:bg-[#002155] transition-transform active:scale-95"
           >
             <MessageSquare className="w-7 h-7" />
           </button>
         ) : (
-          <div className="bg-white rounded-[2rem] shadow-[0_10px_40px_-10px_rgba(0,0,0,0.35)] w-[400px] h-[650px] flex flex-col border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-[2rem] shadow-[0_10px_40px_-10px_rgba(0,33,85,0.35)] w-[400px] h-[650px] flex flex-col border border-gray-100 overflow-hidden">
 
             {/* Header */}
-            <div className="bg-slate-900 text-white px-5 py-4 flex justify-between items-center flex-shrink-0 rounded-t-[2rem]">
+            <div className="bg-white text-[#002155] px-5 py-4 flex justify-between items-center flex-shrink-0 rounded-t-[2rem] border-b border-gray-100">
               <div className="flex items-center gap-3">
-                <Bot className="w-6 h-6 text-red-400" />
+                <Bot className="w-6 h-6 text-[#305EFF]" />
                 <div>
-                  <p className="font-bold tracking-wide leading-none">Style Concierge</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">AI-powered shopping assistant</p>
+                  <p className="font-bold tracking-wide leading-none">Razor</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">AI-powered shopping assistant</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setIsVoiceMode(v => !v)}
-                  className={`px-3 py-1.5 text-[10px] uppercase tracking-wider font-bold rounded-full transition-colors ${
-                    isVoiceMode ? 'bg-red-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  {isVoiceMode ? 'Voice' : 'Text'}
-                </button>
+                {/* Razorpay-style segmented toggle. The active mode is filled with
+                    #305EFF and shows its icon + label; the inactive mode is shown
+                    as a discoverable ghost button so users see voice is available. */}
+                <div className="relative flex items-center bg-[#F6F8FD] border border-gray-200 rounded-full p-1">
+                  <button
+                    onClick={() => setIsVoiceMode(false)}
+                    aria-pressed={!isVoiceMode}
+                    className={`relative z-10 flex items-center gap-1.5 px-3 py-1.5 text-[10px] uppercase tracking-wider font-bold rounded-full transition-all duration-200 ${
+                      !isVoiceMode
+                        ? 'bg-[#305EFF] text-white shadow-[0_2px_8px_-2px_rgba(48,94,255,0.5)]'
+                        : 'text-gray-500 hover:text-[#002155]'
+                    }`}
+                  >
+                    <Bot className="w-3.5 h-3.5" />
+                    Text
+                  </button>
+                  <button
+                    onClick={() => setIsVoiceMode(true)}
+                    aria-pressed={isVoiceMode}
+                    className={`relative z-10 flex items-center gap-1.5 px-3 py-1.5 text-[10px] uppercase tracking-wider font-bold rounded-full transition-all duration-200 ${
+                      isVoiceMode
+                        ? 'bg-[#305EFF] text-white shadow-[0_2px_8px_-2px_rgba(48,94,255,0.5)]'
+                        : 'text-gray-500 hover:text-[#002155]'
+                    }`}
+                  >
+                    <Mic className="w-3.5 h-3.5" />
+                    Voice
+                  </button>
+                </div>
                 <X
-                  className="w-5 h-5 cursor-pointer text-slate-400 hover:text-white transition-colors"
+                  className="w-5 h-5 cursor-pointer text-gray-400 hover:text-[#002155] transition-colors"
                   onClick={() => setIsOpen(false)}
                 />
               </div>
@@ -524,24 +545,23 @@ export default function App() {
 
             {/* ── Voice Mode ── */}
             {isVoiceMode ? (
-              <div className="flex-1 flex flex-col bg-slate-900 overflow-hidden">
+              <div className="flex-1 flex flex-col bg-[#F6F8FD] overflow-hidden">
                 {/* Pulsing orb */}
                 <div className="flex-1 flex flex-col items-center justify-center relative">
-                  <div className="absolute inset-0 bg-gradient-to-b from-slate-900 to-black pointer-events-none" />
                   <div className="relative flex items-center justify-center w-36 h-36 mb-10 z-10">
-                    <div className={`absolute w-full h-full rounded-full bg-red-500/15 transition-all duration-500 ${isListening ? 'scale-[1.6] animate-pulse' : 'scale-100'}`} />
-                    <div className={`absolute w-[78%] h-[78%] rounded-full bg-red-500/30 transition-all duration-300 ${isListening ? 'scale-[1.3]' : 'scale-100'}`} />
+                    <div className={`absolute w-full h-full rounded-full bg-[#305EFF]/15 transition-all duration-500 ${isListening ? 'scale-[1.6] animate-pulse' : 'scale-100'}`} />
+                    <div className={`absolute w-[78%] h-[78%] rounded-full bg-[#305EFF]/30 transition-all duration-300 ${isListening ? 'scale-[1.3]' : 'scale-100'}`} />
                     <button
                       onClick={toggleVoice}
                       className={`relative z-10 w-20 h-20 rounded-full flex items-center justify-center transition-all shadow-lg ${
                         isListening
-                          ? 'bg-red-600 shadow-[0_0_30px_rgba(220,38,38,0.5)]'
-                          : 'bg-slate-800 border-2 border-slate-700 hover:border-slate-500'
+                          ? 'bg-[#305EFF] shadow-[0_0_30px_rgba(48,94,255,0.5)]'
+                          : 'bg-white border-2 border-[#305EFF]/30 hover:border-[#305EFF]'
                       }`}
                     >
                       {loading
                         ? <Headphones className="w-8 h-8 text-white animate-pulse" />
-                        : <Mic className={`w-8 h-8 ${isListening ? 'text-white' : 'text-slate-400'}`} />
+                        : <Mic className={`w-8 h-8 ${isListening ? 'text-white' : 'text-[#305EFF]'}`} />
                       }
                     </button>
                   </div>
@@ -549,12 +569,12 @@ export default function App() {
                   {/* Transcript / status */}
                   <div className="z-10 px-8 text-center min-h-[5rem]">
                     {loading ? (
-                      <p className="text-red-400 font-mono text-sm animate-pulse">Agent is thinking...</p>
+                      <p className="text-[#305EFF] font-mono text-sm animate-pulse">Agent is thinking...</p>
                     ) : (
                       <p className={`transition-all duration-300 leading-snug ${
                         liveTranscript
-                          ? 'text-white text-base font-medium'
-                          : 'text-slate-500 text-sm'
+                          ? 'text-[#002155] text-base font-medium'
+                          : 'text-gray-500 text-sm'
                       }`}>
                         {liveTranscript || (isListening ? 'Listening...' : 'Tap the mic to start.')}
                       </p>
@@ -568,8 +588,8 @@ export default function App() {
                     {(() => {
                       const last = [...messages].reverse().find(m => m.role === 'agent');
                       return last ? (
-                        <div className="bg-slate-800 rounded-2xl px-4 py-3 text-sm text-slate-200 leading-relaxed border border-slate-700">
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Last reply</p>
+                        <div className="bg-white rounded-2xl px-4 py-3 text-sm text-[#002155] leading-relaxed border border-gray-100 shadow-sm">
+                          <p className="text-[10px] text-[#305EFF] uppercase tracking-wider mb-1">Last reply</p>
                           {last.text}
                         </div>
                       ) : null;
@@ -579,13 +599,13 @@ export default function App() {
 
                 {/* Live cart strip */}
                 {liveCart.length > 0 && (
-                  <div className="px-5 pb-4 flex-none border-t border-slate-800 pt-3">
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">
+                  <div className="px-5 pb-4 flex-none border-t border-gray-100 pt-3 bg-white">
+                    <p className="text-[10px] text-[#305EFF] uppercase tracking-wider mb-2">
                       Cart · ₹{cartTotal.toLocaleString()}
                     </p>
                     <div className="flex flex-wrap gap-2">
                       {liveCart.map((item, i) => (
-                        <span key={i} className="text-xs bg-slate-800 text-slate-300 border border-slate-700 rounded-full px-3 py-1 font-mono">
+                        <span key={i} className="text-xs bg-[#F6F8FD] text-[#002155] border border-gray-100 rounded-full px-3 py-1 font-mono">
                           {item.name} ×{item.qty}
                         </span>
                       ))}
@@ -596,7 +616,7 @@ export default function App() {
             ) : (
               /* ── Text / Chat Mode ── */
               <>
-                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/50">
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#F6F8FD]">
                   {messages.map((m, i) => {
                     // Confirmation card
                     if (m.role === 'confirm' && m.confirm) {
@@ -604,17 +624,17 @@ export default function App() {
                       return (
                         <div key={i} className="flex flex-col gap-2">
                           <div className="flex gap-2 justify-start">
-                            <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center text-red-600 flex-shrink-0 mt-1">
+                            <div className="w-7 h-7 rounded-full bg-[#305EFF]/10 flex items-center justify-center text-[#305EFF] flex-shrink-0 mt-1">
                               <Bot className="w-4 h-4" />
                             </div>
-                            <div className="bg-white border border-gray-200 rounded-2xl rounded-bl-none p-4 text-sm text-gray-800 shadow-sm max-w-[85%] leading-relaxed">
+                            <div className="bg-white border border-gray-100 rounded-2xl rounded-bl-none p-4 text-sm text-[#002155] shadow-sm max-w-[85%] leading-relaxed">
                               {m.text}
                             </div>
                           </div>
-                          <div className="ml-9 bg-white border-2 border-red-200 rounded-2xl p-4 shadow-sm max-w-[85%]">
+                          <div className="ml-9 bg-white border-2 border-[#305EFF]/20 rounded-2xl p-4 shadow-sm max-w-[85%]">
                             <div className="flex items-center gap-1.5 mb-3">
-                              <ShoppingBag className="w-4 h-4 text-red-600" />
-                              <span className="text-xs font-bold text-red-700 uppercase tracking-wider">Confirm Purchase</span>
+                              <ShoppingBag className="w-4 h-4 text-[#305EFF]" />
+                              <span className="text-xs font-bold text-[#002155] uppercase tracking-wider">Confirm Purchase</span>
                             </div>
                             <div className="space-y-1.5 mb-4">
                               {cart.items.map((item, j) => (
@@ -624,11 +644,11 @@ export default function App() {
                                 </div>
                               ))}
                               {cart.discount_pct > 0 && (
-                                <div className="flex justify-between text-sm text-green-600 font-bold">
+                                <div className="flex justify-between text-sm text-[#0096FF] font-bold">
                                   <span>Discount</span><span>-{cart.discount_pct}%</span>
                                 </div>
                               )}
-                              <div className="flex justify-between text-sm font-black text-gray-900 border-t border-gray-100 pt-2">
+                              <div className="flex justify-between text-sm font-black text-[#002155] border-t border-gray-100 pt-2">
                                 <span>Total</span>
                                 <span className="font-mono">₹{cart.final_amount.toFixed(2)}</span>
                               </div>
@@ -636,13 +656,13 @@ export default function App() {
                             <div className="flex gap-2">
                               <button
                                 onClick={() => handleDeny(cart.cart_id)}
-                                className="flex-1 flex items-center justify-center gap-1 py-2.5 rounded-xl border border-gray-300 text-gray-600 text-sm font-bold hover:bg-gray-50 transition-colors"
+                                className="flex-1 flex items-center justify-center gap-1 py-2.5 rounded-xl border border-gray-200 text-gray-500 text-sm font-bold hover:bg-gray-50 transition-colors"
                               >
                                 <XCircle className="w-4 h-4" /> Cancel
                               </button>
                               <button
                                 onClick={() => handleConfirm(m.confirm!)}
-                                className="flex-1 flex items-center justify-center gap-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold hover:bg-red-700 transition-colors shadow-md"
+                                className="flex-1 flex items-center justify-center gap-1 py-2.5 rounded-xl bg-[#305EFF] text-white text-sm font-bold hover:bg-[#002155] transition-colors shadow-md"
                               >
                                 <CheckCircle className="w-4 h-4" /> Pay Now
                               </button>
@@ -656,10 +676,10 @@ export default function App() {
                     if (m.role === 'success') {
                       return (
                         <div key={i} className="flex gap-2">
-                          <div className="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center text-green-600 flex-shrink-0 mt-1">
+                          <div className="w-7 h-7 rounded-full bg-[#0096FF]/10 flex items-center justify-center text-[#0096FF] flex-shrink-0 mt-1">
                             <CheckCircle className="w-4 h-4" />
                           </div>
-                          <div className="bg-green-50 border border-green-200 rounded-2xl rounded-bl-none p-4 text-sm font-mono text-green-800 shadow-sm max-w-[85%] whitespace-pre-wrap leading-relaxed">
+                          <div className="bg-[#F6F8FD] border border-gray-100 rounded-2xl rounded-bl-none p-4 text-sm font-mono text-[#002155] shadow-sm max-w-[85%] whitespace-pre-wrap leading-relaxed">
                             {m.text}
                           </div>
                         </div>
@@ -670,14 +690,14 @@ export default function App() {
                     return (
                       <div key={i} className={`flex gap-2 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                         {m.role === 'agent' && (
-                          <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center text-red-600 flex-shrink-0 mt-1">
+                          <div className="w-7 h-7 rounded-full bg-[#305EFF]/10 flex items-center justify-center text-[#305EFF] flex-shrink-0 mt-1">
                             <Bot className="w-4 h-4" />
                           </div>
                         )}
                         <div className={`p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed ${
-                          m.role === 'user'   ? 'bg-slate-900 text-white rounded-br-none shadow-md'
+                          m.role === 'user'   ? 'bg-[#305EFF] text-white rounded-br-none shadow-md'
                           : m.role === 'system' ? 'bg-red-50 text-red-800 border border-red-200 w-full text-xs font-mono'
-                          : 'bg-white border border-gray-200 rounded-bl-none text-gray-800 shadow-sm'
+                          : 'bg-white border border-gray-100 rounded-bl-none text-[#002155] shadow-sm'
                         }`}>
                           {m.text}
                         </div>
@@ -686,7 +706,7 @@ export default function App() {
                   })}
 
                   {loading && (
-                    <div className="flex items-center gap-2 text-gray-400 text-xs px-1">
+                    <div className="flex items-center gap-2 text-[#305EFF] text-xs px-1">
                       <Activity className="w-4 h-4 animate-spin" />
                       Agent is processing...
                     </div>
@@ -694,14 +714,14 @@ export default function App() {
 
                   {/* Fallback Pay button — shown if Razorpay auto-popup was dismissed */}
                   {rzpOrder && (
-                    <div className="bg-white border-2 border-emerald-400 rounded-xl p-4 shadow-sm max-w-[85%]">
-                      <p className="font-semibold text-emerald-700 text-sm mb-1">Ready to checkout</p>
+                    <div className="bg-white border-2 border-[#305EFF]/30 rounded-xl p-4 shadow-sm max-w-[85%]">
+                      <p className="font-semibold text-[#002155] text-sm mb-1">Ready to checkout</p>
                       <p className="text-xs text-gray-500 mb-3">
                         Total: ₹{(rzpOrder.amount / 100).toFixed(2)}
                       </p>
                       <button
                         onClick={() => triggerRazorpay(rzpOrder, rzpOrder.key_id)}
-                        className="w-full bg-black text-white text-sm font-semibold py-2.5 rounded-lg hover:bg-gray-800 transition-colors"
+                        className="w-full bg-[#305EFF] text-white text-sm font-semibold py-2.5 rounded-lg hover:bg-[#002155] transition-colors"
                       >
                         Pay via Razorpay
                       </button>
@@ -718,12 +738,12 @@ export default function App() {
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleSend()}
                     placeholder="Ask for recommendations..."
-                    className="flex-1 bg-gray-100 border-none rounded-full px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 transition-all"
+                    className="flex-1 bg-[#F6F8FD] border-none rounded-full px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#305EFF]/30 transition-all text-[#002155]"
                   />
                   <button
                     onClick={() => handleSend()}
                     disabled={loading}
-                    className="bg-red-600 text-white p-3 rounded-full hover:bg-red-700 disabled:opacity-40 transition-transform active:scale-95 shadow-md"
+                    className="bg-[#305EFF] text-white p-3 rounded-full hover:bg-[#002155] disabled:opacity-40 transition-transform active:scale-95 shadow-md"
                   >
                     <Send className="w-5 h-5" />
                   </button>
