@@ -12,6 +12,10 @@ export default function MerchantConfigPanel() {
   const [saved, setSaved] = useState(false);
   const [stockEdits, setStockEdits] = useState<Record<string, number>>({});
   const [stockSaved, setStockSaved] = useState<Record<string, boolean>>({});
+  const [campaignPrompt, setCampaignPrompt] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedCampaign, setGeneratedCampaign] = useState<any>(null);
+  const [campaignSaved, setCampaignSaved] = useState(false);
 
   useEffect(() => {
     axios.get(`${API}/api/merchant/config`).then(res => {
@@ -46,6 +50,24 @@ export default function MerchantConfigPanel() {
       )
     }));
     setTimeout(() => setStockSaved(prev => ({ ...prev, [sku]: false })), 2000);
+  };
+
+  const handleGenerateCampaign = async () => {
+    if (!campaignPrompt.trim()) return;
+    setIsGenerating(true);
+    try {
+      const res = await axios.post(`${API}/api/merchant/campaign/generate`, { prompt: campaignPrompt });
+      setGeneratedCampaign(res.data);
+    } catch (e) { console.error(e); }
+    setIsGenerating(false);
+  };
+
+  const handleApplyCampaign = async () => {
+    if (!generatedCampaign) return;
+    await axios.post(`${API}/api/merchant/campaign/apply`, generatedCampaign);
+    setConfig((prev: any) => ({ ...prev, active_campaign: generatedCampaign }));
+    setCampaignSaved(true);
+    setTimeout(() => setCampaignSaved(false), 2000);
   };
 
   if (!config) return (
@@ -185,6 +207,70 @@ export default function MerchantConfigPanel() {
             })}
           </div>
         </div>
+      </div>
+
+      {/* AI Campaign Orchestrator */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm space-y-5">
+        <h3 className="font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 text-[#305EFF]">
+          <Sliders className="w-3.5 h-3.5" /> AI Campaign Orchestrator
+        </h3>
+        <p className="text-xs text-gray-500">
+          Instruct the AI to build a strictly bounded promotional campaign. This state will be synced to the B2C chatbot immediately.
+        </p>
+
+        <div className="flex gap-3">
+          <input
+            type="text"
+            value={campaignPrompt}
+            onChange={e => setCampaignPrompt(e.target.value)}
+            placeholder="e.g. 'Run a weekend flash sale on accessories, cap the budget at ₹5000'"
+            className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#305EFF] focus:ring-1 focus:ring-[#305EFF] text-[#002155]"
+          />
+          <button
+            onClick={handleGenerateCampaign}
+            disabled={isGenerating}
+            className="bg-[#305EFF] text-white px-6 py-3 rounded-xl text-sm font-bold shadow-sm hover:bg-[#002155] transition-colors whitespace-nowrap disabled:opacity-70"
+          >
+            {isGenerating ? 'Generating...' : 'Generate Rules'}
+          </button>
+        </div>
+
+        {generatedCampaign && (
+          <div className="mt-4 p-5 rounded-xl border border-[#305EFF]/20 bg-[#F6F8FD] space-y-4">
+            <div className="flex justify-between items-start">
+              <div>
+                <h4 className="font-bold text-[#002155]">{generatedCampaign.name}</h4>
+                <p className="text-xs text-[#305EFF] font-bold mt-1">Target: {generatedCampaign.target_category.toUpperCase()}</p>
+              </div>
+              <span className="bg-green-100 text-green-700 text-[10px] font-black px-2 py-1 rounded uppercase tracking-wider">
+                Bounded & Gated
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white p-3 rounded-lg border border-gray-100">
+                <p className="text-[10px] text-gray-500 font-bold uppercase">Discount Rule</p>
+                <p className="text-lg font-black text-[#002155]">{generatedCampaign.discount_pct}% OFF</p>
+              </div>
+              <div className="bg-white p-3 rounded-lg border border-gray-100">
+                <p className="text-[10px] text-gray-500 font-bold uppercase">Budget Cap</p>
+                <p className="text-lg font-black text-red-600 font-mono">₹{generatedCampaign.budget_limit}</p>
+              </div>
+            </div>
+
+            <div className="bg-white p-3 rounded-lg border border-gray-100">
+              <p className="text-[10px] text-gray-500 font-bold uppercase mb-1">Generated Marketing Copy</p>
+              <p className="text-sm text-gray-700 italic">"{generatedCampaign.marketing_copy}"</p>
+            </div>
+
+            <button
+              onClick={handleApplyCampaign}
+              className={`w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors text-white ${campaignSaved ? 'bg-green-600' : 'bg-[#002155] hover:bg-[#305EFF]'}`}
+            >
+              {campaignSaved ? <><Check className="w-4 h-4"/> Campaign Live</> : "Approve & Activate Campaign"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

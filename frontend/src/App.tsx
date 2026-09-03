@@ -30,6 +30,7 @@ export default function App() {
   const [liveCart, setLiveCart]         = useState<LiveCartItem[]>([]);
   const [history, setHistory]           = useState('');
   const [rzpOrder, setRzpOrder]         = useState<{ amount: number; currency: string; id: string; key_id: string } | null>(null);
+  const [activeCampaign, setActiveCampaign] = useState<any>(null);
 
   // Refs to prevent stale closures inside the WebSocket voice loop.
   // The silence-timer callback captures state at mic-open time; these refs
@@ -198,6 +199,10 @@ export default function App() {
         newHistory,
         currentCart.map(c => ({ sku: c.sku, qty: c.qty })),
       );
+
+      if (res.active_campaign) {
+        setActiveCampaign(res.active_campaign);
+      }
 
       // Update live cart — merge by SKU so re-adds increment qty instead of duplicating
       if (res.added_items?.length) {
@@ -380,7 +385,31 @@ export default function App() {
     setLoading(false);
   };
 
-  const cartTotal = liveCart.reduce((s, i) => s + i.price * i.qty, 0);
+  let subtotal = liveCart.reduce((s, i) => s + i.price * i.qty, 0);
+  let discountAmount = 0;
+
+  if (activeCampaign) {
+    liveCart.forEach(item => {
+      const catItem: any = (catalog as any[]).find(c => c.sku === item.sku);
+      if (catItem) {
+        const targetSku = activeCampaign.target_sku || "NONE";
+        const targetCat = activeCampaign.target_category || "all";
+
+        let isEligible = false;
+        if (targetSku !== "NONE" && item.sku === targetSku) {
+          isEligible = true;
+        } else if (targetSku === "NONE" && (targetCat === 'all' || targetCat === catItem.category)) {
+          isEligible = true;
+        }
+
+        if (isEligible) {
+          discountAmount += (item.price * item.qty) * (activeCampaign.discount_pct / 100);
+        }
+      }
+    });
+  }
+
+  const cartTotal = Math.max(0, subtotal - discountAmount);
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -412,9 +441,20 @@ export default function App() {
                 ))
               )}
             </div>
-            <div className="bg-gray-50 px-6 py-4 border-t border-gray-200 flex justify-between items-center">
-              <span className="text-lg font-black text-gray-800">Total</span>
-              <span className="text-2xl font-black font-mono text-red-600">₹{cartTotal.toFixed(2)}</span>
+            <div className="bg-white p-6 border-t border-gray-100 flex flex-col gap-2">
+              {discountAmount > 0 && (
+                <div className="flex justify-between items-center text-sm font-bold text-green-600">
+                  <span>Campaign Discount ({activeCampaign?.discount_pct}%)</span>
+                  <span>-₹{discountAmount.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-100">
+                <span className="text-xl font-bold text-[#002155]">Total</span>
+                <div className="text-right">
+                  {discountAmount > 0 && <span className="text-sm line-through text-gray-400 mr-2">₹{subtotal.toFixed(2)}</span>}
+                  <span className="text-2xl font-black text-[#305EFF]">₹{cartTotal.toFixed(2)}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>

@@ -6,6 +6,7 @@ STORE_STATE = {
         "high_stock_threshold": 20,
         "high_stock_bonus_discount_pct": 5.0
     },
+    "active_campaign": None, # Will hold bounded campaign rules
     "catalog": [
         {
             "sku": "TEE-001",
@@ -19,7 +20,7 @@ STORE_STATE = {
             "name": "Tokyo Drift Heavyweight Hoodie",
             "price": 1999.0,
             "category": "apparel",
-            "in_stock": 12  # Low stock scenario
+            "in_stock": 12
         },
         {
             "sku": "CRG-003",
@@ -61,3 +62,8 @@ def update_inventory(sku: str, stock: int) -> list:
             item["in_stock"] = stock
             break
     return STORE_STATE["catalog"]
+
+
+def set_active_campaign(campaign: dict) -> dict:
+    STORE_STATE["active_campaign"] = campaign
+    return STORE_STATE["active_campaign"]

@@ -33,12 +33,15 @@ class PaymentFailedWebhook(BaseModel):
 
 @router.post("/api/storefront/chat")
 def b2c_chat(req: B2CChatRequest):
-    catalog = get_store_state()["catalog"]
+    state = get_store_state()
+    catalog = state["catalog"]
     catalog_str = json.dumps(catalog)
     cart_str = json.dumps([i.model_dump() for i in req.current_cart])
 
-    # 1. Orchestrator assesses intent
-    orch = run_orchestrator(req.user_message, req.history, catalog_str, cart_str)
+    active_campaign = state.get("active_campaign")
+    campaign_str = json.dumps(active_campaign) if active_campaign else "None"
+
+    orch = run_orchestrator(req.user_message, req.history, catalog_str, cart_str, campaign_str)
 
     reply_message = orch.get("message", "I didn't quite catch that.")
     action        = orch.get("suggested_action", "NONE")
@@ -91,24 +94,50 @@ def b2c_chat(req: B2CChatRequest):
     if action in ("CALL_UPSELL", "CALL_CROSS_SELL") and trigger_sku:
         agent_type = "UPSELL" if action == "CALL_UPSELL" else "CROSS_SELL"
         try:
-            specialist = run_specialist(agent_type, catalog_str, trigger_item_name, cart_str)
+            specialist = run_specialist(agent_type, catalog_str, trigger_item_name, cart_str, campaign_str)
             reply_message = specialist.get("persuasive_message", reply_message)
         except Exception:
             pass
 
     # 4. Checkout — lock cart and create Razorpay order
     if intent == "CHECKOUT":
-        # Include items added this same turn in the total
-        existing_total = sum(
-            next((i["price"] for i in catalog if i["sku"] == c.sku), 0) * c.qty
-            for c in req.current_cart
-        )
-        new_total = sum(i["price"] * i["qty"] for i in new_cart_items)
-        total = existing_total + new_total
+        # Reconstruct the true final cart from current + this-turn deltas
+        final_cart = {c.sku: c.qty for c in req.current_cart}
+        for item in new_cart_items:
+            final_cart[item["sku"]] = final_cart.get(item["sku"], 0) + item["qty"]
+        for item in updated_cart_items:
+            if item["qty"] <= 0:
+                final_cart.pop(item["sku"], None)
+            else:
+                final_cart[item["sku"]] = item["qty"]
 
-        if total > 0:
-            razorpay_order = create_order(total, f"b2c_{uuid.uuid4().hex[:8]}")
-            reply_message = "I have locked in your cart. Sending you to secure payment now."
+        total = 0.0
+        discount = 0.0
+
+        for sku, qty in final_cart.items():
+            cat_item = next((i for i in catalog if i["sku"] == sku), None)
+            if cat_item:
+                line_total = cat_item["price"] * qty
+                total += line_total
+
+                if active_campaign:
+                    target_sku = active_campaign.get("target_sku", "NONE")
+                    target_cat = active_campaign.get("target_category", "all")
+
+                    is_eligible = False
+                    if target_sku != "NONE" and sku == target_sku:
+                        is_eligible = True
+                    elif target_sku == "NONE" and target_cat in ["all", cat_item["category"]]:
+                        is_eligible = True
+
+                    if is_eligible:
+                        discount += line_total * (active_campaign.get("discount_pct", 0) / 100.0)
+
+        final_total = max(0.0, total - discount)
+
+        if final_total > 0:
+            razorpay_order = create_order(final_total, f"b2c_{uuid.uuid4().hex[:8]}")
+            reply_message = "I have locked in your cart with the discounts applied! Sending you to secure payment now."
         else:
             reply_message = "Your cart is empty. What would you like to add before checking out?"
 
@@ -119,6 +148,7 @@ def b2c_chat(req: B2CChatRequest):
         "razorpay_order":  razorpay_order,
         "razorpay_key_id": RAZORPAY_KEY_ID,
         "is_checkout":     intent == "CHECKOUT",
+        "active_campaign": active_campaign,
     }
 
 
