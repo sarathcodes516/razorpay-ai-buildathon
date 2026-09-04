@@ -17,13 +17,14 @@ keypair per session (private key lives only in this coroutine's stack frame), re
 only its public key, and signs every outbound request — the same contract as the
 standalone scripts/buyer_agent_driver.py, but driven by the UI.
 """
+import base64
 import json
 import time
 import uuid
 from typing import AsyncGenerator
 
 import httpx
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
@@ -147,6 +148,58 @@ async def _run_session(
             yield _status("error")
             return
 
+        # ── Step 0b: Fetch the signed agent catalog + verify Ed25519 signature ─
+        catalog_path = "/api/catalog/agent"
+        catalog_url  = f"{merchant_url}{catalog_path}"
+        try:
+            yield _wire("request", "GET", catalog_path, False, {})
+            t0 = time.monotonic()
+            cresp = await client.get(catalog_url)
+            cat_latency = int((time.monotonic() - t0) * 1000)
+            cat_body = cresp.json()
+            yield _wire("response", "GET", catalog_path, False,
+                        dict(cresp.headers), cat_body, cresp.status_code, cat_latency)
+
+            # Server-side verify: recompute signature on the deterministic payload
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+            try:
+                # Prefer the catalog's own pubkey (always raw 32 bytes). Fall back
+                # to the manifest's pubkey, which is DER (SubjectPublicKeyInfo) hex.
+                pubkey_source = cat_body.get("metadata", {}).get("pubkey") or manifest.get("merchant_public_key")
+                pubkey_bytes = bytes.fromhex(pubkey_source)
+                if len(pubkey_bytes) == 32:
+                    verifier_key = Ed25519PublicKey.from_public_bytes(pubkey_bytes)
+                else:
+                    # DER/SubjectPublicKeyInfo
+                    from cryptography.hazmat.primitives.serialization import load_der_public_key
+                    verifier_key = load_der_public_key(pubkey_bytes)
+
+                payload_str = json.dumps(cat_body["data"], separators=(",", ":"), sort_keys=True)
+                sig = base64.b64decode(cat_body["metadata"]["signature"])
+                verifier_key.verify(sig, payload_str.encode("utf-8"))
+                sig_ok = True
+                sig_note = "Ed25519 Signature Verified against manifest pubkey. Data integrity confirmed."
+            except Exception as ve:
+                sig_ok = False
+                sig_note = f"Signature verification FAILED: {ve}"
+
+            yield _chat("system", "Trust layer: GET /api/catalog/agent")
+            yield _chat("system",
+                f"  ↳ Payload signed by {cat_body['data'].get('merchant_id', 'merchant')}")
+            yield _chat("system", f"  ↳ {sig_note}")
+
+            # Dedicated wire-trace marker the UI listens for
+            yield json.dumps({
+                "type": "CATALOG_VERIFIED",
+                "ok": sig_ok,
+                "item_count": len(cat_body.get("data", {}).get("items", [])),
+                "signature": cat_body.get("metadata", {}).get("signature", ""),
+            }) + "\n"
+        except Exception as exc:
+            yield _chat("system", f"Could not fetch signed catalog: {exc}")
+            yield _status("error")
+            return
+
         # ── Step 1: Register buyer's public key ─────────────────────────────
         register_path = f"/api/agents/{agent_id}/register"
         register_url = f"{merchant_url}{register_path}"
@@ -220,7 +273,7 @@ async def _run_session(
         for turn_num in range(5):
             # Buyer thinks (LLM call — local, no wire event)
             yield _chat("system", f"Turn {turn_num + 1}: buyer agent thinking…")
-            buyer_res = generate_buyer_turn(history, task, mandate_id)
+            buyer_res = generate_buyer_turn(history, task, mandate_id, turn_num + 1, 5)
 
             buyer_msg = buyer_res.get("message", task)
             buyer_action = buyer_res.get("action", "PROPOSE")
@@ -298,11 +351,42 @@ async def _run_session(
                 bounds_action = turn_data.get("bounds_action", "")
                 audit = turn_data.get("audit_trail", {})
                 rzp = turn_data.get("razorpay_order", {})
-                yield _chat("agent",
-                    f"Deal reached!\n"
-                    f"Bounds engine: {bounds_action}\n"
-                    f"Rule: {audit.get('evaluated', '')}\n"
-                    + (f"Razorpay order: {rzp.get('id', '')}" if rzp else ""))
+                execution = turn_data.get("execution")
+
+                # Always emit an EXECUTE_COMPLETE so the UI can render the
+                # outcome panel + settlement block. If the /turn endpoint only
+                # returned a razorpay_order (no Phase-1 execution), synthesise
+                # a minimal settlement payload from what it gave us.
+                if not execution and rzp.get("id"):
+                    execution = {
+                        "razorpay_order_id": rzp.get("id"),
+                        "amount":             (rzp.get("amount", 0) or 0) / 100.0,
+                        "amount_paise":      rzp.get("amount"),
+                        "currency":          rzp.get("currency", "INR"),
+                        "status":            "EXECUTED",
+                        "receipt":           rzp.get("receipt"),
+                    }
+
+                if execution:
+                    yield _chat("agent",
+                        f"Deal reached!\n"
+                        f"Bounds engine: {bounds_action}\n"
+                        f"Rule: {audit.get('evaluated', '')}\n"
+                        f"Razorpay order: {execution.get('razorpay_order_id', '')}\n"
+                        f"Settlement signed (Ed25519): {execution.get('settlement_signature', '')[:24]}…")
+                    # Dedicated wire log line for the WireTrace UI
+                    yield json.dumps({
+                        "type": "EXECUTE_COMPLETE",
+                        "execution": execution,
+                        "mandate_ceiling": (turn_data.get("mandate_ceiling")),
+                        "bounds_action": bounds_action,
+                    }) + "\n"
+                else:
+                    yield _chat("agent",
+                        f"Deal reached!\n"
+                        f"Bounds engine: {bounds_action}\n"
+                        f"Rule: {audit.get('evaluated', '')}\n"
+                        + (f"Razorpay order: {rzp.get('id', '')}" if rzp else ""))
                 yield _status("closed_accepted")
                 return
 

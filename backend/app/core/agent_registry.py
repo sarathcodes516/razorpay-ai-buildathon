@@ -26,6 +26,14 @@ from cryptography.hazmat.primitives.serialization import (
 REGISTRY: dict[str, dict] = {}
 
 
+def _der_hex(priv: Ed25519PrivateKey) -> str:
+    """Return the public half of `priv` as DER (SubjectPublicKeyInfo) hex."""
+    return priv.public_key().public_bytes(
+        encoding=Encoding.DER,
+        format=PublicFormat.SubjectPublicKeyInfo,
+    ).hex()
+
+
 def register_agent(
     agent_id: str,
     role: str,
@@ -35,21 +43,11 @@ def register_agent(
     """
     Register an agent. Idempotent — re-registering the same agent_id returns
     the existing entry unchanged (first registration wins).
-
-    Args:
-        agent_id:        Unique identifier for this agent.
-        role:            e.g. "merchant", "buyer", "principal".
-        capabilities:    List of capability strings.
-        public_key_hex:  Optional DER-encoded public key hex from an external caller.
-                         If omitted, a new Ed25519 keypair is generated server-side.
-
-    Returns public card (no private key).
     """
     if agent_id in REGISTRY:
         return get_agent_card(agent_id)
 
     if public_key_hex:
-        # External agent: store only the public key. No private key on this server.
         REGISTRY[agent_id] = {
             "agent_id": agent_id,
             "role": role,
@@ -59,21 +57,40 @@ def register_agent(
             "_private_key": None,
         }
     else:
-        # Self-hosted agent: generate keypair here.
         priv = Ed25519PrivateKey.generate()
-        pub_hex = priv.public_key().public_bytes(
-            encoding=Encoding.DER,
-            format=PublicFormat.SubjectPublicKeyInfo,
-        ).hex()
         REGISTRY[agent_id] = {
             "agent_id": agent_id,
             "role": role,
             "capabilities": capabilities,
-            "public_key": pub_hex,
+            "public_key": _der_hex(priv),
             "status": "active",
             "_private_key": priv,
         }
 
+    return get_agent_card(agent_id)
+
+
+def register_agent_with_private_key(
+    agent_id: str,
+    role: str,
+    capabilities: list[str],
+    private_key: Ed25519PrivateKey,
+) -> dict:
+    """Register or replace an agent using a pre-existing Ed25519 private key.
+
+    Used by the b2b_settlement service so the merchant settlement key is the
+    same key the agent registry advertises in the discovery manifest. The
+    manifest pubkey then verifies the signed agent catalog and settlement
+    receipt without a key-format mismatch.
+    """
+    REGISTRY[agent_id] = {
+        "agent_id": agent_id,
+        "role": role,
+        "capabilities": capabilities,
+        "public_key": _der_hex(private_key),
+        "status": "active",
+        "_private_key": private_key,
+    }
     return get_agent_card(agent_id)
 
 
@@ -98,17 +115,24 @@ def get_private_key(agent_id: str) -> Ed25519PrivateKey | None:
 
 
 def get_public_key(agent_id: str) -> Ed25519PublicKey | None:
-    """Internal use only — returns the public key object for verification."""
+    """Internal use only — returns the public key object for verification.
+
+    Accepts both DER (SubjectPublicKeyInfo) hex AND raw 32-byte hex, so a
+    caller that registered via DER (legacy) and one that registered via raw
+    32 bytes both work transparently.
+    """
     entry = REGISTRY.get(agent_id)
     if entry is None:
         return None
-    # Support both self-hosted (stored as object via _private_key) and
-    # external (stored as hex string in public_key)
     priv = entry.get("_private_key")
     if priv is not None:
         return priv.public_key()
-    # External agent: reconstruct from stored hex
     try:
-        return load_der_public_key(bytes.fromhex(entry["public_key"]))
+        raw = bytes.fromhex(entry["public_key"])
+        if len(raw) == 32:
+            # Raw 32-byte Ed25519 public key (UAP convention)
+            return Ed25519PublicKey.from_public_bytes(raw)
+        # DER-encoded Ed25519 public key
+        return load_der_public_key(raw)
     except Exception:
         return None

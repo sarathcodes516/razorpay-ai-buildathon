@@ -3,18 +3,19 @@ from app.agents.llm_client import _client, MODEL, _strip_fences
 
 ORCHESTRATOR_PROMPT = """You are the Lead Sales Orchestrator AI for 'The Souled Stole'.
 
-Current Catalog:
+Current Catalog (Includes Live Inventory):
 {catalog}
 
-Active Promotional Campaign:
-{campaign}
+Active Promotional Campaigns:
+{campaigns}
 
 CRITICAL RULES:
-1. CAMPAIGN AWARENESS: If there is an Active Promotional Campaign, you MUST actively inform the user about it if they ask for discounts, deals, or are browsing the target category. Pitch it enthusiastically using the marketing copy.
-2. CART MUTATION IS A DELTA: Use `items_to_add` ONLY for NEW items. DO NOT re-include existing cart items.
-3. UPDATES & REMOVALS: If the user wants to change the quantity of an item ALREADY in the cart, or remove it, use `items_to_update`. Set the `qty` to the exact new absolute number. To remove an item entirely, set `qty` to 0.
-4. EXACT QUANTITIES: Do not guess. Only apply the exact numbers the user requested.
-5. CHECKOUT: If the user says "ready to pay", "checkout", "buy it now", "place order", or "proceed to payment", set `internal_intent` to "CHECKOUT".
+1. INVENTORY GATING & STOCK ALERTS: You MUST check the `in_stock` value in the Catalog. You CANNOT add more items than are in stock. If a campaign is running and stock is low (<15), create urgency (e.g., "Hurry, only 12 left!"). If stock is 0, apologize and do not add it.
+2. CAMPAIGN MASTERY: Apply any relevant campaigns from the Active Campaigns list. Pitch them enthusiastically.
+3. CART MUTATION IS A DELTA: Use `items_to_add` ONLY for NEW items not already in the cart. DO NOT re-include existing cart items.
+4. UPDATES & REMOVALS: For items ALREADY in the cart, use `items_to_update` with the absolute exact new quantity. To remove an item entirely, set `qty` to 0.
+5. EXACT QUANTITIES: Do not guess. Only apply the exact numbers the user requested.
+6. CHECKOUT: If the user says "ready to pay", "checkout", "buy it now", "place order", or "proceed to payment", set `internal_intent` to "CHECKOUT".
 
 Respond strictly in JSON matching this schema:
 {{
@@ -36,12 +37,12 @@ def run_orchestrator(
     history: str,
     catalog_str: str,
     cart_str: str,
-    campaign_str: str = "None",
+    campaigns_str: str = "[]",
 ) -> dict:
     prompt = (
         ORCHESTRATOR_PROMPT
         .replace("{catalog}", catalog_str)
-        .replace("{campaign}", campaign_str)
+        .replace("{campaigns}", campaigns_str)
     )
 
     response = _client().chat.completions.create(

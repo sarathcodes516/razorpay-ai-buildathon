@@ -7,7 +7,7 @@ import {
   MessageSquare, Send, Bot, Activity, X,
   CheckCircle, XCircle, ShoppingBag, Mic, Headphones,
 } from 'lucide-react';
-import { ChatResponse, AuditEntry, CartItem } from './types/api';
+import { ChatResponse, CartItem } from './types/api';
 
 // Cart item shape for the live sidecar
 interface LiveCartItem { sku: string; name: string; price: number; qty: number; }
@@ -27,10 +27,38 @@ export default function App() {
     { role: 'agent', text: "Hey! I'm your AI concierge. Tell me what you're looking for." },
   ]);
   const [loading, setLoading]           = useState(false);
-  const [liveCart, setLiveCart]         = useState<LiveCartItem[]>([]);
-  const [history, setHistory]           = useState('');
-  const [rzpOrder, setRzpOrder]         = useState<{ amount: number; currency: string; id: string; key_id: string } | null>(null);
-  const [activeCampaign, setActiveCampaign] = useState<any>(null);
+  const [liveCart, setLiveCart]         = useState<LiveCartItem[]>(() => {
+    try {
+      const saved = sessionStorage.getItem('b2c_liveCart');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [history, setHistory]           = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('b2c_history');
+      return saved ? JSON.parse(saved) : '';
+    } catch {
+      return '';
+    }
+  });
+  const [rzpOrder, setRzpOrder]         = useState<{ amount: number; currency: string; id: string; key_id: string } | null>(() => {
+    try {
+      const saved = sessionStorage.getItem('b2c_rzpOrder');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [activeCampaigns, setActiveCampaigns] = useState<any[]>(() => {
+    try {
+      const saved = sessionStorage.getItem('b2c_campaigns');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
   // Refs to prevent stale closures inside the WebSocket voice loop.
   // The silence-timer callback captures state at mic-open time; these refs
@@ -40,6 +68,18 @@ export default function App() {
 
   useEffect(() => { liveCartRef.current = liveCart; },  [liveCart]);
   useEffect(() => { historyRef.current  = history;  },  [history]);
+  useEffect(() => {
+    try { sessionStorage.setItem('b2c_liveCart', JSON.stringify(liveCart)); } catch {}
+  }, [liveCart]);
+  useEffect(() => {
+    try { sessionStorage.setItem('b2c_history', JSON.stringify(history)); } catch {}
+  }, [history]);
+  useEffect(() => {
+    try { sessionStorage.setItem('b2c_rzpOrder', JSON.stringify(rzpOrder)); } catch {}
+  }, [rzpOrder]);
+  useEffect(() => {
+    try { sessionStorage.setItem('b2c_campaigns', JSON.stringify(activeCampaigns)); } catch {}
+  }, [activeCampaigns]);
 
   // Voice / Deepgram state
   const [isListening, setIsListening]   = useState(false);
@@ -47,10 +87,6 @@ export default function App() {
   const wsRef                           = useRef<WebSocket | null>(null);
   const mediaRecorderRef                = useRef<MediaRecorder | null>(null);
   const silenceTimerRef                 = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Audit trail state
-  const [auditOpen, setAuditOpen]       = useState(false);
-  const [auditLogs, setAuditLogs]       = useState<AuditEntry[]>([]);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -200,8 +236,8 @@ export default function App() {
         currentCart.map(c => ({ sku: c.sku, qty: c.qty })),
       );
 
-      if (res.active_campaign) {
-        setActiveCampaign(res.active_campaign);
+      if ((res as any).active_campaigns) {
+        setActiveCampaigns((res as any).active_campaigns);
       }
 
       // Update live cart — merge by SKU so re-adds increment qty instead of duplicating
@@ -243,8 +279,6 @@ export default function App() {
           return next;
         });
       }
-
-      if (res.audit_trail) setAuditLogs(prev => [...prev, res.audit_trail]);
 
       const agentReply = res.agent_message ?? 'Done.';
 
@@ -293,7 +327,6 @@ export default function App() {
             ? { ...m, confirm: undefined, role: 'agent', text: 'Opening secure payment. Use UPI ID failure@razorpay to test the failure recovery flow.' }
             : m,
         ));
-        if (result.audit_trail) setAuditLogs(prev => [...prev, result.audit_trail]);
         setLoading(false);
         setIsVoiceMode(false);
 
@@ -388,26 +421,27 @@ export default function App() {
   let subtotal = liveCart.reduce((s, i) => s + i.price * i.qty, 0);
   let discountAmount = 0;
 
-  if (activeCampaign) {
-    liveCart.forEach(item => {
-      const catItem: any = (catalog as any[]).find(c => c.sku === item.sku);
-      if (catItem) {
-        const targetSku = activeCampaign.target_sku || "NONE";
-        const targetCat = activeCampaign.target_category || "all";
+  liveCart.forEach(item => {
+    const catItem: any = (catalog as any[]).find(c => c.sku === item.sku);
+    if (catItem) {
+      // Visual inventory cap so the discount math can't exceed live stock
+      const actualQty = Math.min(Number(item.qty), Number(catItem.in_stock));
+      let bestDiscount = 0;
 
-        let isEligible = false;
-        if (targetSku !== "NONE" && item.sku === targetSku) {
-          isEligible = true;
-        } else if (targetSku === "NONE" && (targetCat === 'all' || targetCat === catItem.category)) {
-          isEligible = true;
+      activeCampaigns.forEach((camp: any) => {
+        const targetSku = camp.target_sku || "NONE";
+        const targetCat = camp.target_category || "all";
+        const isEligible =
+          (targetSku !== "NONE" && item.sku === targetSku) ||
+          (targetSku === "NONE" && (targetCat === 'all' || targetCat === catItem.category));
+        if (isEligible && Number(camp.discount_pct) > bestDiscount) {
+          bestDiscount = Number(camp.discount_pct);
         }
+      });
 
-        if (isEligible) {
-          discountAmount += (item.price * item.qty) * (activeCampaign.discount_pct / 100);
-        }
-      }
-    });
-  }
+      discountAmount += (item.price * actualQty) * (bestDiscount / 100);
+    }
+  });
 
   const cartTotal = Math.max(0, subtotal - discountAmount);
 
@@ -444,7 +478,7 @@ export default function App() {
             <div className="bg-white p-6 border-t border-gray-100 flex flex-col gap-2">
               {discountAmount > 0 && (
                 <div className="flex justify-between items-center text-sm font-bold text-green-600">
-                  <span>Campaign Discount ({activeCampaign?.discount_pct}%)</span>
+                  <span>Campaign Discount (best {Math.max(0, ...activeCampaigns.map((c: any) => Number(c.discount_pct) || 0))}%)</span>
                   <span>-₹{discountAmount.toFixed(2)}</span>
                 </div>
               )}
@@ -461,71 +495,37 @@ export default function App() {
       )}
 
       {/* App header */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white px-6 py-4 flex justify-between items-center shadow-md">
+      <div className="bg-[#EC2D37] border-b border-[#c5242d] text-white px-6 py-4 flex justify-between items-center shadow-md">
         <div>
-          <h1 className="font-bold text-lg tracking-tight">The Souled Stole</h1>
-          <p className="text-xs text-slate-400 font-mono">Merchant Catalog &amp; Configuration</p>
+          <h1 className="font-bold text-lg tracking-tight text-white">The Souled Stole</h1>
+          <p className="text-xs text-white/80">Merchant Catalog &amp; Configuration</p>
         </div>
-        <div className="flex bg-slate-800/80 p-1 rounded-xl border border-slate-700 gap-1">
+        <div className="relative flex items-center bg-[#b8242d] border border-white/20 rounded-full p-1 shadow-inner">
           <button
             onClick={() => setActiveTab('store')}
-            className={`px-5 py-2 text-xs font-bold rounded-lg transition-all ${activeTab === 'store' ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+            aria-pressed={activeTab === 'store'}
+            className={`relative z-10 px-5 py-2 text-xs font-bold rounded-full transition-all duration-200 ${
+              activeTab === 'store'
+                ? 'bg-white text-[#EC2D37] shadow-[0_2px_8px_-2px_rgba(0,0,0,0.25)]'
+                : 'text-white/85 hover:text-white'
+            }`}
           >Catalog</button>
           <button
             onClick={() => setActiveTab('merchant')}
-            className={`px-5 py-2 text-xs font-bold rounded-lg transition-all ${activeTab === 'merchant' ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+            aria-pressed={activeTab === 'merchant'}
+            className={`relative z-10 px-5 py-2 text-xs font-bold rounded-full transition-all duration-200 ${
+              activeTab === 'merchant'
+                ? 'bg-white text-[#EC2D37] shadow-[0_2px_8px_-2px_rgba(0,0,0,0.25)]'
+                : 'text-white/85 hover:text-white'
+            }`}
           >Configuration</button>
         </div>
       </div>
 
       {activeTab === 'store' ? <ProductGrid catalog={catalog} /> : <MerchantConfigPanel />}
 
-      {/* ── Live Audit Trail (bottom-left) ─────────────────────────────────── */}
-      <div className="fixed bottom-6 left-6 z-50">
-        {!auditOpen ? (
-          <button
-            onClick={() => setAuditOpen(true)}
-            className="relative bg-slate-900 text-white p-4 rounded-full shadow-xl hover:bg-slate-800 transition-transform active:scale-95"
-          >
-            <Activity className="w-6 h-6" />
-            {auditLogs.length > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">
-                {auditLogs.length}
-              </span>
-            )}
-          </button>
-        ) : (
-          <div className="bg-white rounded-2xl shadow-2xl w-[420px] max-h-[600px] flex flex-col border border-gray-200 overflow-hidden">
-            <div className="bg-slate-900 text-white px-5 py-4 flex justify-between items-center flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <Activity className="w-5 h-5 text-red-400" />
-                <span className="font-bold tracking-wide">Live Audit Trail</span>
-                <span className="bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">{auditLogs.length}</span>
-              </div>
-              <X className="w-5 h-5 cursor-pointer hover:text-gray-300" onClick={() => setAuditOpen(false)} />
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
-              {auditLogs.length === 0 ? (
-                <p className="text-sm text-gray-400 italic text-center py-8">Awaiting AI decisions...</p>
-              ) : (
-                auditLogs.map((log, i) => (
-                  <div key={i} className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
-                    <p className={`text-sm font-black font-mono mb-1 ${
-                      log.action_taken?.includes('EXECUTE') || log.action_taken?.includes('PASS') ? 'text-green-600'
-                      : log.action_taken?.includes('REJECT') ? 'text-red-700'
-                      : 'text-orange-500'
-                    }`}>{log.action_taken}</p>
-                    {log.rule     && <p className="text-xs font-mono text-gray-500 break-all">{log.rule}</p>}
-                    {log.evaluated && <p className="text-xs font-mono text-gray-400 mt-1">{log.evaluated}</p>}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ── Floating AI Concierge (bottom-right) ────────────────────────────── */}
+      {/* ── Floating AI Concierge (catalog tab only) ────────────────────────── */}
+      {activeTab === 'store' && (
       <div className="fixed bottom-6 right-6 z-50">
         {!isOpen ? (
           <button
@@ -535,15 +535,17 @@ export default function App() {
             <MessageSquare className="w-7 h-7" />
           </button>
         ) : (
-          <div className="bg-white rounded-[2rem] shadow-[0_10px_40px_-10px_rgba(0,33,85,0.35)] w-[400px] h-[650px] flex flex-col border border-gray-100 overflow-hidden">
+          <div className="bg-[#002155] rounded-[2rem] shadow-[0_10px_60px_-10px_rgba(0,33,85,0.55),0_0_0_1px_rgba(0,33,85,0.6)] w-[400px] h-[650px] flex flex-col border border-[#001a3d] overflow-hidden">
 
             {/* Header */}
-            <div className="bg-white text-[#002155] px-5 py-4 flex justify-between items-center flex-shrink-0 rounded-t-[2rem] border-b border-gray-100">
+            <div className="bg-[#002155] text-white px-5 py-4 flex justify-between items-center flex-shrink-0 rounded-t-[2rem] border-b border-white/10 shadow-[0_4px_24px_-8px_rgba(48,94,255,0.5)]">
               <div className="flex items-center gap-3">
-                <Bot className="w-6 h-6 text-[#305EFF]" />
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#305EFF] to-[#0096FF] flex items-center justify-center shadow-[0_0_18px_rgba(48,94,255,0.5)]">
+                  <Bot className="w-5 h-5 text-white" />
+                </div>
                 <div>
-                  <p className="font-bold tracking-wide leading-none">Razor</p>
-                  <p className="text-[10px] text-gray-500 mt-0.5">AI-powered shopping assistant</p>
+                  <p className="font-bold tracking-wide leading-none text-white">Razor</p>
+                  <p className="text-[10px] text-[#A6D8FF] mt-0.5 font-medium">AI-powered shopping assistant</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -585,7 +587,7 @@ export default function App() {
 
             {/* ── Voice Mode ── */}
             {isVoiceMode ? (
-              <div className="flex-1 flex flex-col bg-[#F6F8FD] overflow-hidden">
+              <div className="flex-1 flex flex-col bg-white overflow-hidden">
                 {/* Pulsing orb */}
                 <div className="flex-1 flex flex-col items-center justify-center relative">
                   <div className="relative flex items-center justify-center w-36 h-36 mb-10 z-10">
@@ -628,7 +630,7 @@ export default function App() {
                     {(() => {
                       const last = [...messages].reverse().find(m => m.role === 'agent');
                       return last ? (
-                        <div className="bg-white rounded-2xl px-4 py-3 text-sm text-[#002155] leading-relaxed border border-gray-100 shadow-sm">
+                        <div className="bg-[#F6F8FD] rounded-2xl px-4 py-3 text-sm text-[#002155] leading-relaxed border border-[#305EFF]/20 shadow-sm">
                           <p className="text-[10px] text-[#305EFF] uppercase tracking-wider mb-1">Last reply</p>
                           {last.text}
                         </div>
@@ -639,13 +641,13 @@ export default function App() {
 
                 {/* Live cart strip */}
                 {liveCart.length > 0 && (
-                  <div className="px-5 pb-4 flex-none border-t border-gray-100 pt-3 bg-white">
+                  <div className="px-5 pb-4 flex-none border-t border-gray-200 pt-3 bg-white">
                     <p className="text-[10px] text-[#305EFF] uppercase tracking-wider mb-2">
                       Cart · ₹{cartTotal.toLocaleString()}
                     </p>
                     <div className="flex flex-wrap gap-2">
                       {liveCart.map((item, i) => (
-                        <span key={i} className="text-xs bg-[#F6F8FD] text-[#002155] border border-gray-100 rounded-full px-3 py-1 font-mono">
+                        <span key={i} className="text-xs bg-[#F6F8FD] text-[#002155] border border-[#305EFF]/20 rounded-full px-3 py-1 font-mono">
                           {item.name} ×{item.qty}
                         </span>
                       ))}
@@ -656,7 +658,7 @@ export default function App() {
             ) : (
               /* ── Text / Chat Mode ── */
               <>
-                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#F6F8FD]">
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-white">
                   {messages.map((m, i) => {
                     // Confirmation card
                     if (m.role === 'confirm' && m.confirm) {
@@ -667,11 +669,11 @@ export default function App() {
                             <div className="w-7 h-7 rounded-full bg-[#305EFF]/10 flex items-center justify-center text-[#305EFF] flex-shrink-0 mt-1">
                               <Bot className="w-4 h-4" />
                             </div>
-                            <div className="bg-white border border-gray-100 rounded-2xl rounded-bl-none p-4 text-sm text-[#002155] shadow-sm max-w-[85%] leading-relaxed">
+                            <div className="bg-white border border-[#305EFF]/20 rounded-2xl rounded-bl-none p-4 text-sm text-[#002155] shadow-sm max-w-[85%] leading-relaxed">
                               {m.text}
                             </div>
                           </div>
-                          <div className="ml-9 bg-white border-2 border-[#305EFF]/20 rounded-2xl p-4 shadow-sm max-w-[85%]">
+                          <div className="ml-9 bg-white border-2 border-[#305EFF]/30 rounded-2xl p-4 shadow-md max-w-[85%]">
                             <div className="flex items-center gap-1.5 mb-3">
                               <ShoppingBag className="w-4 h-4 text-[#305EFF]" />
                               <span className="text-xs font-bold text-[#002155] uppercase tracking-wider">Confirm Purchase</span>
@@ -688,7 +690,7 @@ export default function App() {
                                   <span>Discount</span><span>-{cart.discount_pct}%</span>
                                 </div>
                               )}
-                              <div className="flex justify-between text-sm font-black text-[#002155] border-t border-gray-100 pt-2">
+                              <div className="flex justify-between text-sm font-black text-[#002155] border-t border-gray-200 pt-2">
                                 <span>Total</span>
                                 <span className="font-mono">₹{cart.final_amount.toFixed(2)}</span>
                               </div>
@@ -696,7 +698,7 @@ export default function App() {
                             <div className="flex gap-2">
                               <button
                                 onClick={() => handleDeny(cart.cart_id)}
-                                className="flex-1 flex items-center justify-center gap-1 py-2.5 rounded-xl border border-gray-200 text-gray-500 text-sm font-bold hover:bg-gray-50 transition-colors"
+                                className="flex-1 flex items-center justify-center gap-1 py-2.5 rounded-xl border border-gray-300 text-gray-500 text-sm font-bold hover:bg-gray-50 transition-colors"
                               >
                                 <XCircle className="w-4 h-4" /> Cancel
                               </button>
@@ -719,7 +721,7 @@ export default function App() {
                           <div className="w-7 h-7 rounded-full bg-[#0096FF]/10 flex items-center justify-center text-[#0096FF] flex-shrink-0 mt-1">
                             <CheckCircle className="w-4 h-4" />
                           </div>
-                          <div className="bg-[#F6F8FD] border border-gray-100 rounded-2xl rounded-bl-none p-4 text-sm font-mono text-[#002155] shadow-sm max-w-[85%] whitespace-pre-wrap leading-relaxed">
+                          <div className="bg-[#F6F8FD] border border-[#305EFF]/30 rounded-2xl rounded-bl-none p-4 text-sm font-mono text-[#002155] shadow-sm max-w-[85%] whitespace-pre-wrap leading-relaxed">
                             {m.text}
                           </div>
                         </div>
@@ -754,7 +756,7 @@ export default function App() {
 
                   {/* Fallback Pay button — shown if Razorpay auto-popup was dismissed */}
                   {rzpOrder && (
-                    <div className="bg-white border-2 border-[#305EFF]/30 rounded-xl p-4 shadow-sm max-w-[85%]">
+                    <div className="bg-white border-2 border-[#305EFF]/40 rounded-xl p-4 shadow-md max-w-[85%]">
                       <p className="font-semibold text-[#002155] text-sm mb-1">Ready to checkout</p>
                       <p className="text-xs text-gray-500 mb-3">
                         Total: ₹{(rzpOrder.amount / 100).toFixed(2)}
@@ -771,14 +773,14 @@ export default function App() {
                 </div>
 
                 {/* Text input */}
-                <div className="flex-none p-4 bg-white border-t border-gray-100 flex gap-2 items-center">
+                <div className="flex-none p-3 bg-white border-t border-gray-200 flex gap-2 items-center">
                   <input
                     type="text"
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleSend()}
                     placeholder="Ask for recommendations..."
-                    className="flex-1 bg-[#F6F8FD] border-none rounded-full px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#305EFF]/30 transition-all text-[#002155]"
+                    className="flex-1 bg-[#F6F8FD] border border-gray-200 rounded-full px-5 py-3 text-sm focus:outline-none focus:border-[#305EFF] focus:ring-2 focus:ring-[#305EFF]/20 transition-all text-[#002155]"
                   />
                   <button
                     onClick={() => handleSend()}
@@ -793,6 +795,7 @@ export default function App() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

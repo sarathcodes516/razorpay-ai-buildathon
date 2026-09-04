@@ -4,7 +4,7 @@ load_dotenv()
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import catalog, mandate, payments, storefront, gateway, merchant_config, agents, approvals, payment_verify, discovery, buyer_agent_runner, voice_stt
+from app.routers import catalog, mandate, payments, storefront, gateway, merchant_config, agents, approvals, payment_verify, discovery, buyer_agent_runner, voice_stt, agent_catalog
 
 app = FastAPI(title="TrustRail API")
 
@@ -36,13 +36,18 @@ app.include_router(payment_verify.router)
 app.include_router(discovery.router)
 app.include_router(buyer_agent_runner.router)
 app.include_router(voice_stt.router)
+app.include_router(agent_catalog.router)
 
-# Register the merchant's own server-side identity on startup
-from app.core.agent_registry import register_agent as _register_agent
-_register_agent(
+# Register the merchant's own server-side identity on startup, using the SAME
+# Ed25519 keypair that signs the agent catalog and the settlement receipt, so
+# the manifest pubkey round-trips through every signature check.
+from app.core.agent_registry import register_agent_with_private_key
+from app.services.b2b_settlement import _MERCHANT_PRIVATE_KEY
+register_agent_with_private_key(
     "merchant_souledstole_01",
     "merchant",
     ["bulk_discount_negotiation", "inventory_check", "test_mode_payment"],
+    _MERCHANT_PRIVATE_KEY,
 )
 
 @app.get("/")

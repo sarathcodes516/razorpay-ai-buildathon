@@ -21,18 +21,18 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-[#0d0d0d] text-white overflow-hidden">
+    <div className="flex flex-col h-screen bg-ink-900 text-white overflow-hidden">
 
       {/* Top bar */}
-      <header className="flex-none border-b border-[#2a2a2a]">
+      <header className="flex-none border-b border-ink-700">
         <div className="px-6 h-12 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold tracking-tight text-white">TrustRail</span>
-            <span className="text-xs text-[#666] font-light">Procurement Agent</span>
+            <span className="text-xs text-ink-400 font-light">Procurement Agent</span>
           </div>
           {mandateId && (
-            <span className="text-xs font-mono text-[#888]">
-              mandate&nbsp;<span className="text-[#ccc]">{mandateId}</span>
+            <span className="text-xs font-mono text-ink-300">
+              mandate&nbsp;<span className="text-ink-100">{mandateId}</span>
             </span>
           )}
         </div>
@@ -51,7 +51,7 @@ export default function App() {
                   'px-4 py-2.5 text-xs font-medium border-b-2 transition-colors duration-150',
                   isActive ? 'border-white text-white'
                   : locked ? 'border-transparent text-[#3a3a3a] cursor-not-allowed'
-                           : 'border-transparent text-[#888] hover:text-[#ccc]',
+                           : 'border-transparent text-ink-300 hover:text-ink-100',
                 ].join(' ')}
               >
                 {tab.label}
@@ -61,19 +61,19 @@ export default function App() {
         </div>
       </header>
 
-      {/* Content */}
+      {/* Content — always render all three so chat + WebSocket sessions
+          survive tab switches. The `hidden` class is display:none, so the
+          component tree stays mounted and state is preserved. */}
       <main className="flex-1 overflow-hidden flex flex-col min-h-0">
-        {active === 'mandate' && (
-          <div className="flex-1 overflow-y-auto">
-            <MandateConfigurator onMandateCreated={handleMandateCreated} />
-          </div>
-        )}
-        {active === 'gateway' && mandateId && (
-          <AgentGateway mandateId={mandateId} />
-        )}
-        {active === 'direct' && mandateId && (
-          <BuyerAgentApp mandateId={mandateId} />
-        )}
+        <div className={`flex-1 overflow-hidden flex flex-col min-h-0 ${active === 'mandate' ? '' : 'hidden'}`}>
+          <MandateConfigurator onMandateCreated={handleMandateCreated} />
+        </div>
+        <div className={`flex-1 overflow-hidden flex flex-col min-h-0 ${active === 'gateway' && mandateId ? '' : 'hidden'}`}>
+          {mandateId && <AgentGateway mandateId={mandateId} />}
+        </div>
+        <div className={`flex-1 overflow-hidden flex flex-col min-h-0 ${active === 'direct' && mandateId ? '' : 'hidden'}`}>
+          {mandateId && <BuyerAgentApp mandateId={mandateId} />}
+        </div>
       </main>
     </div>
   )

@@ -38,10 +38,10 @@ def b2c_chat(req: B2CChatRequest):
     catalog_str = json.dumps(catalog)
     cart_str = json.dumps([i.model_dump() for i in req.current_cart])
 
-    active_campaign = state.get("active_campaign")
-    campaign_str = json.dumps(active_campaign) if active_campaign else "None"
+    active_campaigns = state.get("campaigns", [])
+    campaigns_str = json.dumps(active_campaigns) if active_campaigns else "[]"
 
-    orch = run_orchestrator(req.user_message, req.history, catalog_str, cart_str, campaign_str)
+    orch = run_orchestrator(req.user_message, req.history, catalog_str, cart_str, campaigns_str)
 
     reply_message = orch.get("message", "I didn't quite catch that.")
     action        = orch.get("suggested_action", "NONE")
@@ -94,7 +94,7 @@ def b2c_chat(req: B2CChatRequest):
     if action in ("CALL_UPSELL", "CALL_CROSS_SELL") and trigger_sku:
         agent_type = "UPSELL" if action == "CALL_UPSELL" else "CROSS_SELL"
         try:
-            specialist = run_specialist(agent_type, catalog_str, trigger_item_name, cart_str, campaign_str)
+            specialist = run_specialist(agent_type, catalog_str, trigger_item_name, cart_str, campaigns_str)
             reply_message = specialist.get("persuasive_message", reply_message)
         except Exception:
             pass
@@ -117,21 +117,24 @@ def b2c_chat(req: B2CChatRequest):
         for sku, qty in final_cart.items():
             cat_item = next((i for i in catalog if i["sku"] == sku), None)
             if cat_item:
-                line_total = cat_item["price"] * qty
+                # Hard Inventory Gate: cap checkout qty to live stock
+                actual_qty = min(qty, cat_item["in_stock"])
+                line_total = cat_item["price"] * actual_qty
                 total += line_total
 
-                if active_campaign:
-                    target_sku = active_campaign.get("target_sku", "NONE")
-                    target_cat = active_campaign.get("target_category", "all")
+                # Pick the best discount across all eligible campaigns
+                best_discount_pct = 0.0
+                for camp in active_campaigns:
+                    target_sku = camp.get("target_sku", "NONE")
+                    target_cat = camp.get("target_category", "all")
+                    is_eligible = (
+                        (target_sku != "NONE" and sku == target_sku)
+                        or (target_sku == "NONE" and target_cat in ["all", cat_item["category"]])
+                    )
+                    if is_eligible and float(camp.get("discount_pct", 0)) > best_discount_pct:
+                        best_discount_pct = float(camp["discount_pct"])
 
-                    is_eligible = False
-                    if target_sku != "NONE" and sku == target_sku:
-                        is_eligible = True
-                    elif target_sku == "NONE" and target_cat in ["all", cat_item["category"]]:
-                        is_eligible = True
-
-                    if is_eligible:
-                        discount += line_total * (active_campaign.get("discount_pct", 0) / 100.0)
+                discount += line_total * (best_discount_pct / 100.0)
 
         final_total = max(0.0, total - discount)
 
@@ -148,7 +151,7 @@ def b2c_chat(req: B2CChatRequest):
         "razorpay_order":  razorpay_order,
         "razorpay_key_id": RAZORPAY_KEY_ID,
         "is_checkout":     intent == "CHECKOUT",
-        "active_campaign": active_campaign,
+        "active_campaigns": active_campaigns,
     }
 
 

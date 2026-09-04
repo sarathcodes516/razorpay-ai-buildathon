@@ -3,7 +3,7 @@ import json
 from fastapi import APIRouter
 from pydantic import BaseModel
 from openai import OpenAI
-from app.core.merchant_state import get_store_state, update_store_policy, update_inventory, set_active_campaign
+from app.core.merchant_state import get_store_state, update_store_policy, update_inventory, set_active_campaign, add_campaign, remove_campaign
 
 router = APIRouter()
 client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.getenv("OPENROUTER_API_KEY", "dummy_key"))
@@ -83,4 +83,8 @@ Respond ONLY in JSON matching this schema:
 
 @router.post("/api/merchant/campaign/apply")
 def apply_campaign(req: CampaignApply):
-    return set_active_campaign(req.model_dump())
+    return add_campaign(req.model_dump())
+
+@router.delete("/api/merchant/campaign/{campaign_name}")
+def delete_campaign(campaign_name: str):
+    return remove_campaign(campaign_name)

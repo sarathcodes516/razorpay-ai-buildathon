@@ -6,7 +6,8 @@ STORE_STATE = {
         "high_stock_threshold": 20,
         "high_stock_bonus_discount_pct": 5.0
     },
-    "active_campaign": None, # Will hold bounded campaign rules
+    "active_campaign": None,
+    "campaigns": [], # NEW: Array of active campaigns
     "catalog": [
         {
             "sku": "TEE-001",
@@ -67,3 +68,15 @@ def update_inventory(sku: str, stock: int) -> list:
 def set_active_campaign(campaign: dict) -> dict:
     STORE_STATE["active_campaign"] = campaign
     return STORE_STATE["active_campaign"]
+
+
+def add_campaign(campaign: dict) -> list:
+    if "campaigns" not in STORE_STATE:
+        STORE_STATE["campaigns"] = []
+    STORE_STATE["campaigns"].append(campaign)
+    return STORE_STATE["campaigns"]
+
+
+def remove_campaign(name: str) -> list:
+    STORE_STATE["campaigns"] = [c for c in STORE_STATE.get("campaigns", []) if c.get("name") != name]
+    return STORE_STATE["campaigns"]

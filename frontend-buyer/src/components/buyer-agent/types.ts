@@ -30,8 +30,30 @@ export type SessionStatus =
   | "closed_rejected"
   | "error";
 
+export interface CatalogProof {
+  ok: boolean;
+  item_count: number;
+  signature: string;
+}
+
+export interface SettlementProof {
+  execution: {
+    razorpay_order_id?: string;
+    receipt?: string;
+    amount?: number;
+    sku?: string;
+    qty?: number;
+    discount_pct?: number;
+    settlement_signature?: string;
+  };
+  bounds_action?: string;
+  mandate_ceiling?: number;
+}
+
 export interface AgentSessionState {
   status: SessionStatus;
   messages: ChatMessage[];
   wire: WireEvent[];
+  settlement?: SettlementProof | null;
+  catalog?: CatalogProof | null;
 }
