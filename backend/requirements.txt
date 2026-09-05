@@ -3,7 +3,6 @@ uvicorn
 pydantic
 razorpay
 python-dotenv
-google-genai
 openai
 deepgram-sdk
 websockets

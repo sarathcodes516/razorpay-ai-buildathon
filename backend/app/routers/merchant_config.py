@@ -3,6 +3,7 @@ import json
 from fastapi import APIRouter
 from pydantic import BaseModel
 from openai import OpenAI
+from app.agents.llm_client import MODEL
 from app.core.merchant_state import get_store_state, update_store_policy, update_inventory, set_active_campaign, add_campaign, remove_campaign
 
 router = APIRouter()
@@ -73,7 +74,7 @@ Respond ONLY in JSON matching this schema:
 }}"""
 
     response = client.chat.completions.create(
-        model="minimax/minimax-m3:free",
+        model=MODEL,
         messages=[
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": req.prompt}

@@ -161,7 +161,6 @@ async def _run_session(
                         dict(cresp.headers), cat_body, cresp.status_code, cat_latency)
 
             # Server-side verify: recompute signature on the deterministic payload
-            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
             try:
                 # Prefer the catalog's own pubkey (always raw 32 bytes). Fall back
                 # to the manifest's pubkey, which is DER (SubjectPublicKeyInfo) hex.

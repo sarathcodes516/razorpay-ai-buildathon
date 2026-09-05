@@ -1,12 +1,13 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-import os
 from fastapi import FastAPI, Request
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.routers import catalog, mandate, payments, storefront, gateway, merchant_config, agents, approvals, payment_verify, discovery, buyer_agent_runner, voice_stt, agent_catalog
+from app.core.agent_registry import register_agent_with_private_key
+from app.services.b2b_settlement import _MERCHANT_PRIVATE_KEY
 
 app = FastAPI(title="TrustRail API")
 
@@ -37,11 +38,8 @@ async def _validation_exception_handler(request: Request, exc: RequestValidation
     )
 
 
-from fastapi.exceptions import HTTPException as _HTTPException  # noqa: E402
-
-
-@app.exception_handler(_HTTPException)
-async def _http_exception_handler(request: Request, exc: _HTTPException):
+@app.exception_handler(HTTPException)
+async def _http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": _stringify_detail(exc.detail)},
@@ -80,8 +78,6 @@ app.include_router(agent_catalog.router)
 # Register the merchant's own server-side identity on startup, using the SAME
 # Ed25519 keypair that signs the agent catalog and the settlement receipt, so
 # the manifest pubkey round-trips through every signature check.
-from app.core.agent_registry import register_agent_with_private_key
-from app.services.b2b_settlement import _MERCHANT_PRIVATE_KEY
 register_agent_with_private_key(
     "merchant_souledstole_01",
     "merchant",

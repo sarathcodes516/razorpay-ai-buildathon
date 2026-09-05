@@ -94,7 +94,7 @@ def execute_autonomous_settlement(
         # Requires real Razorpay test keys in the .env file. If the live API
         # rejects the call (bad keys, network down, plan limits), the settlement
         # MUST fail and surface a clear error to the gateway.
-        rzp_order = client.order.create(data=order_payload)
+        rzp_order = razorpay.Order(client).create(data=order_payload)
         rzp_order_id = rzp_order["id"]
     except Exception as exc:
         return False, {}, f"Razorpay Gateway Error: {exc}"

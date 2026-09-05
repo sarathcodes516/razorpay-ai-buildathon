@@ -2,12 +2,27 @@ import React, { useEffect, useState, useRef } from 'react';
 import Navbar from './components/Navbar';
 import ProductGrid from './components/ProductGrid';
 import MerchantConfigPanel from './components/MerchantConfigPanel';
-import { fetchCatalog, sendChatMessage, recoverPayment, confirmPurchase } from './api/client';
+import { fetchCatalog, sendChatMessage, confirmPurchase } from './api/client';
 import { ProductChipStrip } from './components/ProductChipStrip';
-import { ChatResponse } from './types/api';
 import type { CatalogItem } from './utils/catalog';
-import axios from 'axios';
-import { Send, Activity, X, ShoppingBag, Mic, Headphones, CreditCard, Sparkles, Menu, MessageSquare, Bot, CheckCircle, XCircle } from 'lucide-react';
+import { Send, Activity, X, ShoppingBag, Mic, Headphones, MessageSquare, Bot, CheckCircle, XCircle } from 'lucide-react';
+
+type ChatCartItem = { sku: string; qty: number; price: number; category: string };
+type ChatCart = {
+  cart_id: string;
+  mandate_id: string;
+  items: ChatCartItem[];
+  subtotal: number;
+  discount_pct: number;
+  final_amount: number;
+};
+type ChatResponse = {
+  cart: ChatCart;
+  razorpay_order?: { id: string; amount: number; currency: string; error?: string };
+  razorpay_key_id?: string;
+  action?: string;
+  error?: string;
+};
 
 type ChatMessage = {
   role: 'user' | 'agent' | 'system' | 'success' | 'confirm';
@@ -455,20 +470,12 @@ useEffect(() => {
     setLoading(false);
   };
 
-  const handleDeny = (cartId: string) =>
+const handleDeny = (cartId: string) =>
     setMessages(prev => prev.map(m =>
       m.confirm?.cart.cart_id === cartId
         ? { ...m, confirm: undefined, role: 'system', text: 'Purchase cancelled.' }
         : m,
     ));
-
-  const handleFailure = async (reason: string) => {
-    setMessages(prev => [...prev, { role: 'system', text: `[SYSTEM] Payment Failed: ${reason}` }]);
-    setLoading(true);
-    const recovery = await recoverPayment(reason);
-    setMessages(prev => [...prev, { role: 'agent', text: recovery.agent_message }]);
-    setLoading(false);
-  };
 
   let subtotal = liveCart.reduce((s, i) => s + i.price * i.qty, 0);
   let discountAmount = 0;

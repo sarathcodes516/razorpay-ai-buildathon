@@ -1,45 +1,17 @@
 """
-concierge_agent.py — Face 1: B2C storefront concierge.
+concierge_agent.py — Face 1: B2C storefront concierge (payment-recovery variant).
 
-Trust boundary: talks to a cooperative human present in real time.
-One-shot JSON via call_gemini_json is the correct interface here — the human
-can catch a bad response and retry, and the session is interactive.
+Trust boundary: talks to a cooperative human present in real time. One-shot
+JSON via `call_llm_json` is the correct interface here — the human can catch
+a bad response and retry, and the session is interactive.
+
+Only the payment-recovery entry point is wired up. The proactive
+`generate_agent_proposal` is kept dormant so the file can be reactivated if a
+human-facing storefront (Face 1) is ever added on top of the orchestrator.
 """
-import os
 import re as _re
-from app.agents.llm_client import call_gemini_json
+from app.agents.llm_client import call_llm_json
 
-CATALOG_PATH = os.path.join(os.path.dirname(__file__), "../data/catalog.json")
-
-SYSTEM_PROMPT = """You are the AI Sales Concierge for 'The Souled Stole', an urban streetwear brand.
-Your job is to help users find what they asked for and suggest add-ons conversationally, but ONLY include items in the cart that the user explicitly asked for or confirmed they want.
-
-Rules:
-- If the user asks for a specific item, put ONLY that item in "items". Do not silently add extras.
-- You MAY suggest complementary items in your "message" text, but do not put them in "items" unless the user agreed.
-- Only offer a discount if the user is buying 2 or more items they asked for. Never invent a bundle to justify a discount.
-- Prices must match the catalog exactly.
-
-RESPONSE STYLE (your reply is read aloud by text-to-speech):
-- Keep "message" to 1-2 short sentences, roughly 15-40 words. Never write a paragraph.
-- Plain prose only. NO asterisks, NO underscores, NO backticks, NO hash marks, NO bullet points, NO numbered lists, NO code blocks, NO markdown.
-- NO emoji, NO arrows, NO decorative symbols, NO em-dashes, NO ellipses, NO pipe characters.
-- Use commas and full stops only. Percent is written as " percent" or " %" (TTS can mangle the percent sign).
-- Prefer prose prices over numbers in the message: "two thousand rupees" instead of "Rs 2000". The catalog card below your message will display the exact price.
-- Spell out: "and", "or", "to", "with", "percent", "rupees", "only", "left". The TTS handles words better than abbreviations.
-
-Available Catalog: {catalog}
-
-IMPORTANT: You MUST respond with a single raw JSON object only. No markdown. No code fences.
-
-The JSON object must have exactly these three keys:
-- "message": your short conversational reply in plain prose (1-2 sentences, no emojis, no asterisks)
-- "items": ONLY the items the user explicitly asked for, each with keys "sku", "qty", "price", "category"
-- "discount_pct": 0.0 unless the user is buying 2+ items they explicitly requested
-
-Example, user asks for one beanie:
-{"message": "Great choice. The Classic Logo Beanie is around five hundred rupees. Want to pair it with the Tactical Crossbody Bag.", "items": [{"sku": "ACC-005", "qty": 1, "price": 499.0, "category": "accessories"}], "discount_pct": 0.0}
-"""
 
 RECOVERY_PROMPT = """You are the AI Sales Concierge for 'StreetSoul'.
 The user's payment just failed. Reason: {error_reason}.
@@ -63,7 +35,6 @@ Example of valid output format:
 """
 
 
-# ── TTS-friendly output post-processor (server-side enforcement) ────────────
 _TTS_BAD_CHARS = _re.compile(r"[*_`~#|→•·…—–]+")
 _TTS_EMOJI = _re.compile(
     r"[\U0001F300-\U0001FAFF"
@@ -115,15 +86,8 @@ def _sanitize_message_field(result: dict) -> dict:
     return result
 
 
-def generate_agent_proposal(user_message: str) -> dict:
-    with open(CATALOG_PATH, "r") as f:
-        catalog_str = f.read()
-    prompt = SYSTEM_PROMPT.replace("{catalog}", catalog_str)
-    return _sanitize_message_field(call_gemini_json(prompt, user_message))
-
-
 def generate_recovery_message(error_reason: str) -> dict:
     prompt = RECOVERY_PROMPT.replace("{error_reason}", error_reason)
     return _sanitize_message_field(
-        call_gemini_json(prompt, "The payment failed. Generate a recovery response.")
+        call_llm_json(prompt, "The payment failed. Generate a recovery response.")
     )
