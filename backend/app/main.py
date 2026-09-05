@@ -2,11 +2,50 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from app.routers import catalog, mandate, payments, storefront, gateway, merchant_config, agents, approvals, payment_verify, discovery, buyer_agent_runner, voice_stt, agent_catalog
 
 app = FastAPI(title="TrustRail API")
+
+
+def _stringify_detail(detail) -> str:
+    if isinstance(detail, str):
+        return detail
+    if isinstance(detail, list):
+        bits = []
+        for e in detail:
+            if isinstance(e, dict):
+                loc = ".".join(str(p) for p in e.get("loc", []))
+                msg = e.get("msg", "")
+                bits.append(f"{loc}: {msg}" if loc else str(msg))
+            else:
+                bits.append(str(e))
+        return "; ".join(bits)
+    return str(detail)
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_exception_handler(request: Request, exc: RequestValidationError):
+    # Always return detail as a string so the front-end can render it
+    # without producing "[object Object]" from a template literal.
+    return JSONResponse(
+        status_code=422,
+        content={"detail": _stringify_detail(exc.errors())},
+    )
+
+
+from fastapi.exceptions import HTTPException as _HTTPException  # noqa: E402
+
+
+@app.exception_handler(_HTTPException)
+async def _http_exception_handler(request: Request, exc: _HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": _stringify_detail(exc.detail)},
+    )
 
 app.add_middleware(
     CORSMiddleware,

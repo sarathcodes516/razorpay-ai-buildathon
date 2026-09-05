@@ -115,7 +115,7 @@ async def negotiate(req: NegotiateRequest):
             if buyer_action in ["ACCEPT", "REJECT"]:
                 # Buyer initiated terminal state
                 last_merchant = next(
-                    (t["data"] for t in reversed(get_session(session_id)["turns"]) if t.get("role") == "merchant"),
+                    (t["data"] for t in reversed((get_session(session_id) or {}).get("turns", []) or []) if t.get("role") == "merchant"),
                     {},
                 )
                 items = last_merchant.get("approved_items") or buyer_items or [{"sku": "UNKNOWN_SKU", "qty": 1, "price": 0, "category": "all"}]
@@ -200,7 +200,7 @@ async def negotiate(req: NegotiateRequest):
             # MERCHANT TURN
             # ---------------------------------------------------------
             yield _log_event(f"Turn {turn_num + 1}: merchant agent evaluating…")
-            history_str = _render_history(get_session(session_id)["turns"])
+            history_str = _render_history((get_session(session_id) or {}).get("turns", []) or [])
 
             merchant_res = await loop.run_in_executor(
                 None, generate_b2b_merchant_turn, history_str, buyer_msg, turn_num
@@ -465,7 +465,7 @@ def gateway_turn(req: TurnRequest):
         }
         settlement_ok, execution_data, settlement_audit = execute_autonomous_settlement(
             mandate=mandate_for_settlement, session_id=req.session_id,
-            buyer_agent_id=req.buyer_agent_id if hasattr(req, "buyer_agent_id") else "buyer_agent_signed",
+            buyer_agent_id=getattr(req, "buyer_agent_id", "buyer_agent_signed"),
             merchant_agent_id=session.get("merchant_agent_id", "merchant_souledstole_01"),
             sku=primary_item.get("sku", "UNKNOWN_SKU"),
             qty=int(primary_item.get("qty", 1)),

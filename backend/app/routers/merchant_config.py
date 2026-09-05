@@ -27,6 +27,7 @@ class CampaignApply(BaseModel):
     target_sku: str = "NONE"
     marketing_copy: str
     active: bool = True
+    trigger_rule: str = "always"  # "always" | "low_stock" | "until_low_stock"
 
 @router.get("/api/merchant/config")
 def get_config():
@@ -49,6 +50,17 @@ Catalog: {catalog}
 Analyze the merchant's request and generate a STRICTLY BOUNDED promotional campaign.
 CRITICAL: If the merchant targets a specific item, you MUST provide its exact SKU in `target_sku`.
 
+TRIGGER RULE (CRITICAL): If the merchant's request mentions any of:
+  - "until stock runs low", "until stock becomes lower", "while stock is high",
+    "until we run out", "while we still have stock", "while still in stock"
+  - similar phrases that tie the discount to current inventory levels
+  then you MUST set `trigger_rule` to "until_low_stock" (apply while stock >= high_stock_threshold).
+
+  - "low stock", "last few", "while supplies last", "when stock drops"
+  then set `trigger_rule` to "low_stock" (apply only when stock has dropped below the threshold).
+
+  Otherwise, set `trigger_rule` to "always" (default — applies regardless of stock level).
+
 Respond ONLY in JSON matching this schema:
 {{
   "name": "Catchy Campaign Name",
@@ -56,6 +68,7 @@ Respond ONLY in JSON matching this schema:
   "budget_limit": <float>,
   "target_category": "apparel" | "accessories" | "all",
   "target_sku": "SKU_CODE" | "NONE",
+  "trigger_rule": "always" | "low_stock" | "until_low_stock",
   "marketing_copy": "A short, punchy 1-sentence SMS/Email blast."
 }}"""
 

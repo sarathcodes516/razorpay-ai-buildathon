@@ -85,22 +85,57 @@ def propose_discount(requested_pct: float) -> Dict[str, Any]:
 
 
 def check_active_campaign(sku: str, category: Optional[str] = None) -> Dict[str, Any]:
-    """Look up any active merchant campaign that targets the SKU or its category."""
+    """
+    Look up an active campaign for `sku` (or its `category`) and evaluate
+    whether the campaign's trigger_rule is currently satisfied given live stock.
+
+    Returns the standard campaign payload with two extra fields the LLM
+    should surface in its rationale:
+      - "eligible": bool
+      - "trigger_rule": "always" | "low_stock" | "until_low_stock"
+    """
     state = get_store_state()
     campaigns = state.get("campaigns", []) or []
+    catalog = state.get("catalog", [])
+    cat_item = next((i for i in catalog if i.get("sku") == sku), None)
+
     for camp in campaigns:
         target_sku = camp.get("target_sku", "NONE")
         target_cat = camp.get("target_category", "all")
         if not camp.get("active", True):
             continue
         if target_sku != "NONE" and target_sku == sku:
-            return _campaign_payload(camp, sku, target_cat)
+            eligible = evaluate_campaign_eligibility(camp, sku, cat_item)
+            payload = _campaign_payload(camp, sku, target_cat)
+            payload["eligible"] = eligible
+            if not eligible:
+                payload["has_campaign"] = False
+                payload["discount_pct"] = 0.0
+                payload["rationale"] = (
+                    f"Campaign '{camp.get('name')}' exists but its "
+                    f"trigger_rule '{camp.get('trigger_rule', 'always')}' is not "
+                    f"satisfied for the current stock level."
+                )
+            return payload
         if target_sku == "NONE" and (target_cat == "all" or target_cat == category):
-            return _campaign_payload(camp, sku, target_cat)
+            eligible = evaluate_campaign_eligibility(camp, sku, cat_item)
+            payload = _campaign_payload(camp, sku, target_cat)
+            payload["eligible"] = eligible
+            if not eligible:
+                payload["has_campaign"] = False
+                payload["discount_pct"] = 0.0
+                payload["rationale"] = (
+                    f"Campaign '{camp.get('name')}' exists but its "
+                    f"trigger_rule '{camp.get('trigger_rule', 'always')}' is not "
+                    f"satisfied for the current stock level."
+                )
+            return payload
     return {
         "has_campaign": False,
         "discount_pct": 0.0,
         "rationale": "No active campaign targeting this SKU",
+        "eligible": False,
+        "trigger_rule": "always",
     }
 
 
@@ -111,11 +146,41 @@ def _campaign_payload(camp: dict, sku: str, target_cat: str) -> Dict[str, Any]:
         "discount_pct": float(camp.get("discount_pct", 0.0)),
         "budget_limit": float(camp.get("budget_limit", 0.0)),
         "target_category": target_cat,
+        "trigger_rule": camp.get("trigger_rule", "always"),
         "rationale": (
             f"Campaign '{camp.get('name')}' active on target "
             f"{sku or target_cat} ({camp.get('discount_pct')}% off)"
         ),
     }
+
+
+def evaluate_campaign_eligibility(camp: dict, sku: str, catalog_item: dict) -> bool:
+    """
+    Decide whether a campaign applies to a given cart line item, factoring in
+    the campaign's trigger_rule plus the merchant's high_stock_threshold.
+
+    trigger_rule values:
+      - "always"           — applies regardless of stock (default)
+      - "low_stock"        — applies only when in_stock <  high_stock_threshold
+      - "until_low_stock"  — applies while in_stock >= high_stock_threshold;
+                              stops when stock drops below it (i.e. until_low_stock
+                              = "while still well stocked"). This is the user's
+                              natural phrasing "until stock becomes lower than
+                              the threshold".
+    """
+    in_stock = int(catalog_item.get("in_stock", 0)) if catalog_item else 0
+    threshold = int(get_store_state().get("policy", {}).get("high_stock_threshold", 20))
+    rule = str(camp.get("trigger_rule", "always")).lower()
+
+    if rule == "always":
+        return True
+    if rule == "low_stock":
+        return in_stock < threshold and in_stock > 0
+    if rule in ("until_low_stock", "until_low"):
+        return in_stock >= threshold
+    # Unknown rule: be safe, allow the discount (the campaign is a merchant
+    # explicit instruction; we don't want to silently drop it).
+    return True
 
 
 def propose_bundle_addon(current_skus: List[str]) -> Dict[str, Any]:
@@ -159,6 +224,12 @@ def propose_bundle_addon(current_skus: List[str]) -> Dict[str, Any]:
                 is_eligible = True
 
             if not is_eligible:
+                continue
+
+            # Stock-pressure rule: don't pitch a low-stock-aimed add-on if
+            # stock has already dropped to 0, don't pitch an until-low-stock
+            # add-on if the item is already below the threshold, etc.
+            if not evaluate_campaign_eligibility(camp, item["sku"], item):
                 continue
 
             regular_price = float(item.get("price", 0.0))
