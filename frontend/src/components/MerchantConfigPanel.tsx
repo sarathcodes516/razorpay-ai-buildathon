@@ -10,7 +10,7 @@ const RZP_BLUE = '#305EFF';
 const RZP_DEEP = '#002155';
 const RZP_LIGHT = '#0096FF';
 
-export default function MerchantConfigPanel() {
+export default function MerchantConfigPanel({ onCampaignsChange }: { onCampaignsChange?: (campaigns: any[]) => void } = {}) {
   const [config, setConfig] = useState<any>(null);
   const [maxDiscount, setMaxDiscount] = useState(15);
   const [highStockThreshold, setHighStockThreshold] = useState(20);
@@ -70,20 +70,28 @@ export default function MerchantConfigPanel() {
   const handleApplyCampaign = async () => {
     if (!generatedCampaign) return;
     await axios.post(`${API}/api/merchant/campaign/apply`, generatedCampaign);
-    setConfig((prev: any) => ({
-      ...prev,
-      campaigns: [...(prev?.campaigns || []), generatedCampaign],
-    }));
+    setConfig((prev: any) => {
+      const next = {
+        ...prev,
+        campaigns: [...(prev?.campaigns || []), generatedCampaign],
+      };
+      onCampaignsChange?.(next?.campaigns || []);
+      return next;
+    });
     setCampaignSaved(true);
     setTimeout(() => setCampaignSaved(false), 2000);
   };
 
   const handleDeleteCampaign = async (name: string) => {
     await axios.delete(`${API}/api/merchant/campaign/${encodeURIComponent(name)}`);
-    setConfig((prev: any) => ({
-      ...prev,
-      campaigns: (prev?.campaigns || []).filter((c: any) => c.name !== name),
-    }));
+    setConfig((prev: any) => {
+      const next = {
+        ...prev,
+        campaigns: (prev?.campaigns || []).filter((c: any) => c.name !== name),
+      };
+      onCampaignsChange?.(next?.campaigns || []);
+      return next;
+    });
   };
 
   if (!config) return (

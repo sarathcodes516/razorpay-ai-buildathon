@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import Navbar from './components/Navbar';
 import ProductGrid from './components/ProductGrid';
 import MerchantConfigPanel from './components/MerchantConfigPanel';
@@ -95,39 +95,72 @@ export default function App() {
   // Razorpay orders are server-side / time-limited — never restore from
   // sessionStorage. On a refresh, the user has to start checkout again.
   const [rzpOrder, setRzpOrder]         = useState<{ amount: number; currency: string; id: string; key_id: string } | null>(null);
-  const [activeCampaigns, setActiveCampaigns] = useState<any[]>(() => {
-    try {
-      const saved = sessionStorage.getItem('b2c_campaigns');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [activeCampaigns, setActiveCampaigns] = useState<any[]>([]);
 
   // Refs to prevent stale closures inside the WebSocket voice loop.
   const liveCartRef  = useRef<LiveCartItem[]>([]);
   const historyRef   = useRef('');
 
-useEffect(() => { liveCartRef.current = liveCart; },  [liveCart]);
-useEffect(() => { historyRef.current  = history;  },  [history]);
-// One-shot sessionStorage cleanup on mount: ensure no stale cart / rzpOrder
-// / messages leak from a previous browser session.
-useEffect(() => {
-  try {
-    sessionStorage.removeItem('b2c_liveCart');
-    sessionStorage.removeItem('b2c_rzpOrder');
-  } catch {}
-  setLiveCart([]);
-  setRzpOrder(null);
-  // run once on mount only
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, []);
-useEffect(() => {
-  try { sessionStorage.setItem('b2c_history', JSON.stringify(history)); } catch {}
-}, [history]);
-useEffect(() => {
-  try { sessionStorage.setItem('b2c_campaigns', JSON.stringify(activeCampaigns)); } catch {}
-}, [activeCampaigns]);
+  useEffect(() => { liveCartRef.current = liveCart; },  [liveCart]);
+  useEffect(() => { historyRef.current  = history;  },  [history]);
+  // One-shot sessionStorage cleanup on mount: ensure no stale cart / rzpOrder
+  // / messages leak from a previous browser session.
+  useEffect(() => {
+    try {
+      sessionStorage.removeItem('b2c_liveCart');
+      sessionStorage.removeItem('b2c_rzpOrder');
+    } catch {}
+    setLiveCart([]);
+    setRzpOrder(null);
+    // run once on mount only
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    try { sessionStorage.setItem('b2c_history', JSON.stringify(history)); } catch {}
+  }, [history]);
+  useEffect(() => {
+    try { sessionStorage.setItem('b2c_campaigns', JSON.stringify(activeCampaigns)); } catch {}
+  }, [activeCampaigns]);
+
+  // Fetch fresh campaigns from backend on mount and whenever the store tab
+  // becomes active again. This ensures the storefront never shows campaigns
+  // that were lost during a backend restart.
+  useEffect(() => {
+    if (activeTab !== 'store') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/merchant/config');
+        if (!cancelled && res.ok) {
+          const data = await res.json();
+          const campaigns = (data?.campaigns || []).filter((c: any) => c && c.active !== false);
+          setActiveCampaigns(campaigns);
+        }
+      } catch {
+        // keep the empty/default state on failure
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTab]);
+
+  // Keep voice state consistent when the widget closes or mode switches.
+  // This stops the mic/WebSocket immediately so voice cannot linger in
+  // text mode or after the chat is closed.
+  useEffect(() => {
+    if (!isOpen || !isVoiceMode) {
+      mediaRecorderRef.current?.stop();
+      wsRef.current?.close();
+      setIsListening(false);
+      setLiveTranscript('');
+    }
+  }, [isOpen, isVoiceMode]);
+
+  const stopVoice = useCallback(() => {
+    mediaRecorderRef.current?.stop();
+    wsRef.current?.close();
+    setIsListening(false);
+    setLiveTranscript('');
+  }, []);
 
   // Voice / Deepgram state
   const [isListening, setIsListening]   = useState(false);
@@ -161,10 +194,7 @@ useEffect(() => {
   // ── Voice toggle ────────────────────────────────────────────────────────────
   const toggleVoice = async () => {
     if (isListening) {
-      mediaRecorderRef.current?.stop();
-      wsRef.current?.close();
-      setIsListening(false);
-      setLiveTranscript('');
+      stopVoice();
       return;
     }
     try {
@@ -202,8 +232,8 @@ useEffect(() => {
         }
       };
 
-      ws.onerror = () => setIsListening(false);
-      ws.onclose = () => setIsListening(false);
+      ws.onerror = () => stopVoice();
+      ws.onclose = () => stopVoice();
     } catch {
       alert('Microphone access is required for Voice Mode.');
     }
@@ -286,6 +316,15 @@ useEffect(() => {
     setMessages(prev => [...prev, { role: 'user', text: trimmed }]);
     setLoading(true);
 
+    // Stop voice listening while the agent processes so the mic does not
+    // keep recording during the LLM round-trip.
+    if (isListening) {
+      mediaRecorderRef.current?.stop();
+      wsRef.current?.close();
+      setIsListening(false);
+      setLiveTranscript('');
+    }
+
     try {
       const res = await sendChatMessage(
         trimmed,
@@ -365,13 +404,6 @@ useEffect(() => {
       speakAgentMessage(agentReply);
 
       if (res.is_checkout && res.razorpay_order) {
-        if (isListening) {
-          mediaRecorderRef.current?.stop();
-          wsRef.current?.close();
-          setIsListening(false);
-          setLiveTranscript('');
-        }
-        setIsVoiceMode(false);
         const orderWithKey = { ...res.razorpay_order, key_id: res.razorpay_key_id };
         setRzpOrder(orderWithKey);
         setTimeout(() => triggerRazorpay(res.razorpay_order, res.razorpay_key_id ?? ''), 1500);
@@ -396,7 +428,12 @@ useEffect(() => {
             : m,
         ));
         setLoading(false);
-        setIsVoiceMode(false);
+        if (isListening) {
+          mediaRecorderRef.current?.stop();
+          wsRef.current?.close();
+          setIsListening(false);
+          setLiveTranscript('');
+        }
 
         const options = {
           key:         result.razorpay_key_id,
@@ -583,7 +620,13 @@ const handleDeny = (cartId: string) =>
           onViewSku={handleViewSku}
         />
       )}
-      {activeTab === 'merchant' && <MerchantConfigPanel />}
+      {activeTab === 'merchant' && (
+        <MerchantConfigPanel
+          onCampaignsChange={(campaigns) => {
+            setActiveCampaigns(campaigns);
+          }}
+        />
+      )}
 
       {activeTab === 'store' && (
         <div className="fixed bottom-6 right-6 z-50">
@@ -606,43 +649,43 @@ const handleDeny = (cartId: string) =>
                     <p className="text-[10px] text-[#A6D8FF] mt-0.5 font-medium">AI-powered shopping assistant</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="relative flex items-center bg-[#F6F8FD] border border-gray-200 rounded-full p-1">
-                    <button
-                      onClick={() => setIsVoiceMode(false)}
-                      aria-pressed={!isVoiceMode}
-                      className={`relative z-10 flex items-center gap-1.5 px-3 py-1.5 text-[10px] uppercase tracking-wider font-bold rounded-full transition-all duration-200 ${
-                        !isVoiceMode
-                          ? 'bg-[#305EFF] text-white shadow-[0_2px_8px_-2px_rgba(48,94,255,0.5)]'
-                          : 'text-gray-500 hover:text-[#002155]'
-                      }`}
-                    >
-                      <Bot className="w-3.5 h-3.5" />
-                      Text
-                    </button>
-                    <button
-                      onClick={() => setIsVoiceMode(true)}
-                      aria-pressed={isVoiceMode}
-                      className={`relative z-10 flex items-center gap-1.5 px-3 py-1.5 text-[10px] uppercase tracking-wider font-bold rounded-full transition-all duration-200 ${
-                        isVoiceMode
-                          ? 'bg-[#305EFF] text-white shadow-[0_2px_8px_-2px_rgba(48,94,255,0.5)]'
-                          : 'text-gray-500 hover:text-[#002155]'
-                      }`}
-                    >
-                      <Mic className="w-3.5 h-3.5" />
-                      Voice
-                    </button>
-                  </div>
-                  <X
-                    className="w-5 h-5 cursor-pointer text-gray-400 hover:text-[#002155] transition-colors"
-                    onClick={() => setIsOpen(false)}
-                  />
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex items-center bg-[#F6F8FD] border border-gray-200 rounded-full p-1">
+                      <button
+                        onClick={() => { stopVoice(); setIsVoiceMode(false); }}
+                        aria-pressed={!isVoiceMode}
+                        className={`relative z-10 flex items-center gap-1.5 px-3 py-1.5 text-[10px] uppercase tracking-wider font-bold rounded-full transition-all duration-200 ${
+                          !isVoiceMode
+                            ? 'bg-[#305EFF] text-white shadow-[0_2px_8px_-2px_rgba(48,94,255,0.5)]'
+                            : 'text-gray-500 hover:text-[#002155]'
+                        }`}
+                      >
+                        <Bot className="w-3.5 h-3.5" />
+                        Text
+                      </button>
+                      <button
+                        onClick={() => setIsVoiceMode(true)}
+                        aria-pressed={isVoiceMode}
+                        className={`relative z-10 flex items-center gap-1.5 px-3 py-1.5 text-[10px] uppercase tracking-wider font-bold rounded-full transition-all duration-200 ${
+                          isVoiceMode
+                            ? 'bg-[#305EFF] text-white shadow-[0_2px_8px_-2px_rgba(48,94,255,0.5)]'
+                            : 'text-gray-500 hover:text-[#002155]'
+                        }`}
+                      >
+                        <Mic className="w-3.5 h-3.5" />
+                        Voice
+                      </button>
+                    </div>
+                    <X
+                      className="w-5 h-5 cursor-pointer text-gray-400 hover:text-[#002155] transition-colors"
+                      onClick={() => { stopVoice(); setIsOpen(false); }}
+                    />
                 </div>
               </div>
 
               {isVoiceMode ? (
-                <div className="flex-1 flex flex-col bg-white overflow-hidden">
-                  <div className="flex-1 flex flex-col items-center justify-center relative">
+                <div className="flex-1 flex flex-col bg-white overflow-y-auto">
+                  <div className="flex-shrink-0 flex flex-col items-center justify-center relative">
                     <div className="relative flex items-center justify-center w-36 h-36 mb-10 z-10">
                       <div className={`absolute w-full h-full rounded-full bg-[#305EFF]/15 transition-all duration-500 ${isListening ? 'scale-[1.6] animate-pulse' : 'scale-100'}`} />
                       <div className={`absolute w-[78%] h-[78%] rounded-full bg-[#305EFF]/30 transition-all duration-300 ${isListening ? 'scale-[1.3]' : 'scale-100'}`} />
